@@ -17,7 +17,7 @@ public static class SearchBackendSettingsResolver
             SearchBackendKind.Wolfram => DefaultWolframEndpoint,
             SearchBackendKind.Ollama => NormalizeOllamaEndpoint(
                 string.IsNullOrWhiteSpace(spec.Credential) ? DefaultOllamaBaseUrl : spec.Credential),
-            SearchBackendKind.ChatGPT => DefaultChatGptEndpoint,
+            SearchBackendKind.ChatGPT => ResolveChatGptEndpoint(),
             _ => null
         };
     }
@@ -36,6 +36,12 @@ public static class SearchBackendSettingsResolver
             SearchBackendKind.ChatGPT => DefaultChatGptModel,
             _ => string.Empty
         };
+    }
+
+    private static string ResolveChatGptEndpoint()
+    {
+        var overrideUrl = Environment.GetEnvironmentVariable("OPENJIBO_SEARCH_CHATGPT_ENDPOINT");
+        return string.IsNullOrWhiteSpace(overrideUrl) ? DefaultChatGptEndpoint : overrideUrl.Trim();
     }
 
     private static string NormalizeOllamaEndpoint(string endpoint)

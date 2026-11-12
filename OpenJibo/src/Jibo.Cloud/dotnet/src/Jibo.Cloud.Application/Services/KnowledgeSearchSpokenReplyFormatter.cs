@@ -50,7 +50,7 @@ internal static partial class KnowledgeSearchSpokenReplyFormatter
         return backendKind switch
         {
             SearchBackendKind.Wolfram => "wolf ram alpha",
-            SearchBackendKind.ChatGPT => "chat gee pee tee",
+            SearchBackendKind.ChatGPT => "Claude",
             SearchBackendKind.Ollama => "ollama",
             SearchBackendKind.Wikipedia => "wikipedia dot org",
             _ => "my sources"

@@ -745,7 +745,6 @@ public sealed partial class JiboInteractionService
         }
 
         var locale = turn.Locale ?? string.Empty;
-        if (locale.EndsWith("-US", StringComparison.OrdinalIgnoreCase)) return false;
 
         return null;
     }
