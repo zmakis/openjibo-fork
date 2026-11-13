@@ -47,17 +47,33 @@ public sealed partial class JiboInteractionService
         if (willSearch)
             await EnsureSearchThinkingPreludeAsync(cancellationToken);
 
+        // When an AI backend is configured, ask it first: it gives short, direct, current answers
+        // and keeps conversation memory for follow-ups. Wikipedia becomes the backup when the AI
+        // has no answer or is down. Without an AI backend, Wikipedia stays first as before.
+        var preferAi = !skipKnowledgeSearch && knowledgeSearchService?.IsConfigured == true;
+
+        JiboInteractionDecision? searchDecision = null;
+        if (preferAi)
+        {
+            searchDecision = await TryBuildKnowledgeSearchDecisionAsync(transcript, cancellationToken);
+            if (IsKnowledgeSearchFound(searchDecision))
+                return searchDecision!;
+        }
+
         var wikipediaLookup = skipKnowledgeSearch
             ? null
             : await TryLookupWikipediaAsync(transcript, cancellationToken);
         if (IsWikipediaFound(wikipediaLookup))
             return BuildWikipediaFoundDecision(wikipediaLookup!);
 
-        var searchDecision = skipKnowledgeSearch
-            ? null
-            : await TryBuildKnowledgeSearchDecisionAsync(transcript, cancellationToken);
-        if (IsKnowledgeSearchFound(searchDecision))
-            return searchDecision!;
+        if (!preferAi)
+        {
+            searchDecision = skipKnowledgeSearch
+                ? null
+                : await TryBuildKnowledgeSearchDecisionAsync(transcript, cancellationToken);
+            if (IsKnowledgeSearchFound(searchDecision))
+                return searchDecision!;
+        }
 
         if (isWhoWhatLookup)
         {

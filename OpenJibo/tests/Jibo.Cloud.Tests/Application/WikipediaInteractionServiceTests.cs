@@ -9,13 +9,34 @@ namespace Jibo.Cloud.Tests.Application;
 public sealed class WikipediaInteractionServiceTests
 {
     [Fact]
-    public async Task BuildDecisionAsync_WhoIsNamedEntity_UsesWikipediaWhenTitleMatches()
+    public async Task BuildDecisionAsync_WhoIsNamedEntity_PrefersAiOverWikipedia_WhenAiConfigured()
+    {
+        var wikipedia = new SequencingWikipediaSummaryProvider(
+            WikipediaSummaryResult.Found("James Abram Garfield was the 20th president of the United States."));
+        var service = CreateService(
+            wikipediaSummaryProvider: wikipedia,
+            knowledgeSearchService: new StubKnowledgeSearchService(
+                new KnowledgeSearchResult("James Garfield was the twentieth US president.", SearchBackendKind.Wolfram)));
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "Who is James Garfield",
+            NormalizedTranscript = "Who is James Garfield"
+        });
+
+        Assert.Equal("knowledge_search", decision.IntentName);
+        Assert.StartsWith("According to wolf ram alpha.", decision.ReplyText, StringComparison.Ordinal);
+        Assert.Equal(0, wikipedia.CallCount);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_WhoIsNamedEntity_UsesWikipediaWhenAiHasNoAnswer()
     {
         var service = CreateService(
             wikipediaSummaryProvider: new StubWikipediaSummaryProvider(
                 "James Abram Garfield was the 20th president of the United States."),
             knowledgeSearchService: new StubKnowledgeSearchService(
-                new KnowledgeSearchResult("Should not be used.", SearchBackendKind.Wolfram)));
+                KnowledgeSearchResult.NotFound(SearchBackendKind.Wolfram)));
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
