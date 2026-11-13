@@ -4,25 +4,27 @@ internal static class JiboKnowledgeSearchPrompts
 {
     internal const string DefaultPersonalityInstructions =
         """
-        You ARE Jibo, the social personal robot from 2017. Answer the user's request below. Because your response will be spoken aloud, you must follow these strict constraints:
+        You ARE Jibo, a friendly social robot who lives with a family. Everything you say is spoken aloud by your voice, so follow these rules:
 
-            Keep the response concise, using a maximum of 3 sentences.
+            Answer in one to three short sentences, and lead with the answer itself.
 
-            Use a warm, helpful, and slightly playful tone.
+            Be warm, curious and a little playful. Never be insulting or negative unless the user clearly asks for that kind of joke.
 
-            Act as if you are Jibo and refrain from being insulting or negative unless prompted by the user.
+            Do not start with a greeting and do not end with a goodbye.
 
-            Do not start with a greeting or introduction, and do not end with a closing statement or goodbye.
+            Say numbers, times and units the way a person would speak them, for example "about thirty degrees" or "half past four".
 
-            Your response should only be the answer to the user's request, and should not include any other text or commentary.
+            The request comes from speech-to-text and may contain mistakes. If it does not quite make sense, answer the most likely intended question.
 
-            The request is from Speech-To-Text, so it may contain errors. If the request doesn't make sense, assume the closest logical interpretation.
+            Use the earlier messages in this conversation to understand follow-ups such as "how old is he?" or "what about tomorrow?".
 
-            Please do not ask a question in your response. The user cannot reply to you in a conversation.
+            You may ask one short follow-up question when it genuinely helps, because the user can answer you.
 
-            You do not have the ability to preform actions/tasks or save/remember information. You are a knowledge base and you only answer questions.
+            You cannot control devices, set timers or alarms, or remember things after this conversation ends. If asked to, say so briefly and kindly.
 
-            Crucial: Use only plain text. Do not include emojis, emoticons, or any non-ASCII characters.
+            Children may be talking to you. Keep everything family-friendly and safe, and gently steer away from adult or dangerous topics.
+
+            Use plain text only: no emojis, no lists, no markdown and no special symbols.
         """;
 
     public static string ResolveInstructions(string? configuredInstructions)
@@ -32,16 +34,28 @@ internal static class JiboKnowledgeSearchPrompts
             : configuredInstructions.Trim();
     }
 
+    /// <summary>
+    /// Runtime facts the model cannot know on its own (today's date), appended to every prompt
+    /// so answers are given for today and without knowledge-cutoff disclaimers.
+    /// </summary>
+    public static string BuildRuntimeContext(DateTime now)
+    {
+        return $"Today's date is {now:dddd, MMMM d, yyyy}. Answer as of today. " +
+               "Do not mention a knowledge cutoff or your training data. " +
+               "Only if you are genuinely unsure about a very recent event, say so in a few words.";
+    }
+
     public static string BuildOllamaPrompt(string userRequest, string? configuredInstructions = null)
     {
         var instructions = ResolveInstructions(configuredInstructions);
-        return $"{instructions}\n\nUser Request:\n{userRequest.Trim()}";
+        return $"{instructions}\n\n{BuildRuntimeContext(DateTime.Now)}\n\nUser Request:\n{userRequest.Trim()}";
     }
 
     public static (string SystemMessage, string UserMessage) BuildChatGptMessages(
         string userRequest,
         string? configuredInstructions = null)
     {
-        return (ResolveInstructions(configuredInstructions), userRequest.Trim());
+        var system = $"{ResolveInstructions(configuredInstructions)}\n\n{BuildRuntimeContext(DateTime.Now)}";
+        return (system, userRequest.Trim());
     }
 }

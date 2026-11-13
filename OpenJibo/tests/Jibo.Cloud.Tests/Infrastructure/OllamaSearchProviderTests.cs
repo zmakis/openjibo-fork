@@ -48,7 +48,7 @@ public sealed class OllamaSearchProviderTests
         Assert.Equal("llava:7b", json.RootElement.GetProperty("model").GetString());
         var prompt = json.RootElement.GetProperty("prompt").GetString();
         Assert.Contains("You ARE Jibo", prompt, StringComparison.Ordinal);
-        Assert.Contains("knowledge base", prompt, StringComparison.Ordinal);
+        Assert.Contains("family-friendly", prompt, StringComparison.Ordinal);
         Assert.Contains("User Request:", prompt, StringComparison.Ordinal);
         Assert.Contains("How old is Donald Trump", prompt, StringComparison.Ordinal);
         Assert.False(json.RootElement.GetProperty("stream").GetBoolean());

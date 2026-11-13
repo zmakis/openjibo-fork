@@ -23,10 +23,11 @@ public sealed partial class JiboInteractionService
         var isQuestion = TranscriptHeuristics.IsLikelyQuestion(transcript);
         if (!isQuestion)
         {
-            // Fallback: send unrecognised sentences with real content to the AI
-            // instead of answering "I don't understand".
+            // Fallback: send unrecognised sentences with real content (4+ words) to the AI
+            // instead of answering "I don't understand". Short fragments are usually
+            // speech-to-text noise ("Gling lang gone") and still get "I don't understand".
             var wordCount = transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-            if (wordCount < 3 || knowledgeSearchService?.IsConfigured != true)
+            if (wordCount < 4 || knowledgeSearchService?.IsConfigured != true)
                 return ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
 
             await EnsureSearchThinkingPreludeAsync(cancellationToken);

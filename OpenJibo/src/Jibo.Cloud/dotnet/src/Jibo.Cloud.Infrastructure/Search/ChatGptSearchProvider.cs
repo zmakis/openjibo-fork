@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Jibo.Cloud.Application.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -22,6 +23,13 @@ public sealed class ChatGptSearchProvider(
     private readonly ConcurrentDictionary<string, CacheEntry> _cache =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Short-term conversation memory so follow-ups ("how old is he?") work.
+    // The provider is a singleton and Jibo is one robot, so one rolling history is enough.
+    private const int MaxHistoryTurns = 6;
+    private static readonly TimeSpan HistoryIdleTimeout = TimeSpan.FromMinutes(5);
+    private readonly object _historyLock = new();
+    private readonly List<ConversationTurn> _history = [];
+
     public SearchBackendKind Kind => SearchBackendKind.ChatGPT;
 
     public async Task<KnowledgeSearchResult?> SearchAsync(
@@ -37,26 +45,43 @@ public sealed class ChatGptSearchProvider(
         if (string.IsNullOrWhiteSpace(endpoint)) return null;
 
         var model = SearchBackendSettingsResolver.ResolveModel(request.BackendSpec);
-        var cacheKey = BuildCacheKey(request.BackendSpec, model, request.Query.Trim());
-        var attachVision = ShouldAttachVisionPhoto(request.Query);
-        if (!attachVision && TryGetCachedValue(cacheKey, out var cachedResult))
+        var query = request.Query.Trim();
+        var cacheKey = BuildCacheKey(request.BackendSpec, model, query);
+        var attachVision = ShouldAttachVisionPhoto(query);
+        var history = GetActiveHistory();
+
+        // A cached answer is only safe when it cannot depend on a photo, on earlier turns,
+        // or on the current time/date.
+        var useCache = !attachVision && history.Count == 0 && !IsTimeSensitive(query);
+        if (useCache && TryGetCachedValue(cacheKey, out var cachedResult))
+        {
+            if (cachedResult?.Outcome == KnowledgeSearchOutcome.Found)
+                RememberTurn(query, cachedResult.AnswerText);
             return cachedResult;
+        }
 
         var result = await TryCompleteAsync(
             endpoint,
             request.BackendSpec.Credential,
             model,
-            request.Query.Trim(),
+            query,
             attachVision,
+            history,
             cancellationToken);
-        if (attachVision)
-            return result;
-        SetCachedValue(
-            cacheKey,
-            result,
-            result.Outcome == KnowledgeSearchOutcome.Found
-                ? options.CacheTtlSeconds
-                : options.FailureCacheTtlSeconds);
+
+        if (result.Outcome == KnowledgeSearchOutcome.Found)
+            RememberTurn(query, result.AnswerText);
+
+        if (useCache)
+        {
+            SetCachedValue(
+                cacheKey,
+                result,
+                result.Outcome == KnowledgeSearchOutcome.Found
+                    ? options.CacheTtlSeconds
+                    : options.FailureCacheTtlSeconds);
+        }
+
         return result;
     }
 
@@ -66,6 +91,7 @@ public sealed class ChatGptSearchProvider(
         string model,
         string prompt,
         bool attachVision,
+        IReadOnlyList<ConversationTurn> history,
         CancellationToken cancellationToken)
     {
         try
@@ -73,7 +99,6 @@ public sealed class ChatGptSearchProvider(
             var (systemMessage, userMessage) = JiboKnowledgeSearchPrompts.BuildChatGptMessages(
                 prompt,
                 options.LlmInstructions);
-            systemMessage += $"\n\nToday's date is {DateTime.Now:dddd, MMMM d, yyyy}. Answer for today, briefly, in one or two spoken sentences. Do not mention a knowledge cutoff or training data. Only if you are genuinely unsure about a very recent event, say so in a few words.";
 
             object userContent = userMessage;
             const string visionPhotoPath = "/data/vision-latest.jpg";
@@ -101,10 +126,7 @@ public sealed class ChatGptSearchProvider(
             httpRequest.Content = JsonContent.Create(
                 new ChatCompletionRequest(
                     model,
-                    [
-                        new ChatCompletionRequestMessage("system", systemMessage),
-                        new ChatCompletionRequestMessage("user", userContent)
-                    ]));
+                    BuildMessages(systemMessage, history, userContent)));
 
             using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -146,6 +168,58 @@ public sealed class ChatGptSearchProvider(
         var q = query.ToLowerInvariant();
         return VisionTriggerPhrases.Any(t => q.Contains(t));
     }
+
+    private static List<ChatCompletionRequestMessage> BuildMessages(
+        string systemMessage,
+        IReadOnlyList<ConversationTurn> history,
+        object userContent)
+    {
+        var messages = new List<ChatCompletionRequestMessage>(2 + history.Count * 2)
+        {
+            new ChatCompletionRequestMessage("system", systemMessage)
+        };
+        foreach (var turn in history)
+        {
+            messages.Add(new ChatCompletionRequestMessage("user", turn.User));
+            messages.Add(new ChatCompletionRequestMessage("assistant", turn.Assistant));
+        }
+
+        messages.Add(new ChatCompletionRequestMessage("user", userContent));
+        return messages;
+    }
+
+    private IReadOnlyList<ConversationTurn> GetActiveHistory()
+    {
+        lock (_historyLock)
+        {
+            if (_history.Count > 0 &&
+                DateTimeOffset.UtcNow - _history[^1].AtUtc > HistoryIdleTimeout)
+                _history.Clear();
+
+            return _history.ToArray();
+        }
+    }
+
+    private void RememberTurn(string user, string assistant)
+    {
+        if (string.IsNullOrWhiteSpace(user) || string.IsNullOrWhiteSpace(assistant)) return;
+
+        lock (_historyLock)
+        {
+            _history.Add(new ConversationTurn(user, assistant, DateTimeOffset.UtcNow));
+            while (_history.Count > MaxHistoryTurns)
+                _history.RemoveAt(0);
+        }
+    }
+
+    private static readonly Regex TimeSensitivePattern = new(
+        @"\b(today|tonight|tomorrow|yesterday|now|current|currently|latest|recent|news|weather|forecast|score|scores|time|date|this (week|month|year|weekend))\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    internal static bool IsTimeSensitive(string query) =>
+        !string.IsNullOrWhiteSpace(query) && TimeSensitivePattern.IsMatch(query);
+
+    private sealed record ConversationTurn(string User, string Assistant, DateTimeOffset AtUtc);
 
     private static string BuildCacheKey(SearchBackendSpec spec, string model, string query)
     {

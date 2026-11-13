@@ -52,7 +52,7 @@ public sealed class ChatGptSearchProviderTests
         Assert.Equal(2, messages.GetArrayLength());
         Assert.Equal("system", messages[0].GetProperty("role").GetString());
         Assert.Contains("You ARE Jibo", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
-        Assert.Contains("knowledge base", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
+        Assert.Contains("family-friendly", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
         Assert.Equal("user", messages[1].GetProperty("role").GetString());
         Assert.Equal("How old is Donald Trump", messages[1].GetProperty("content").GetString());
         Assert.False(json.RootElement.GetProperty("stream").GetBoolean());
@@ -138,8 +138,50 @@ public sealed class ChatGptSearchProviderTests
 
         using var json = JsonDocument.Parse(capturedBody!);
         var messages = json.RootElement.GetProperty("messages");
-        Assert.Equal("Custom assistant instructions.", messages[0].GetProperty("content").GetString());
+        Assert.StartsWith("Custom assistant instructions.", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
+        Assert.Contains("Today's date is", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain("You ARE Jibo", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchAsync_SendsEarlierTurns_ForFollowUpQuestions()
+    {
+        var bodies = new List<string>();
+        var replies = new Queue<string>(["The president is Donald Trump.", "He is 80 years old."]);
+        var handler = new RecordingHttpMessageHandler(request =>
+        {
+            bodies.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            var reply = JsonSerializer.Serialize(new
+            {
+                choices = new[] { new { message = new { role = "assistant", content = replies.Dequeue() } } }
+            });
+            return JsonResponse(reply);
+        });
+        var provider = CreateProvider(handler);
+        var spec = new SearchBackendSpec(SearchBackendKind.ChatGPT, "test-api-key", "gpt-5.4-nano");
+
+        await provider.SearchAsync(new KnowledgeSearchRequest("Who is the president of the USA", spec));
+        var second = await provider.SearchAsync(new KnowledgeSearchRequest("How old is he", spec));
+
+        Assert.Equal("He is 80 years old.", second!.AnswerText);
+        using var json = JsonDocument.Parse(bodies[1]);
+        var messages = json.RootElement.GetProperty("messages");
+        Assert.Equal(4, messages.GetArrayLength());
+        Assert.Equal("user", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Who is the president of the USA", messages[1].GetProperty("content").GetString());
+        Assert.Equal("assistant", messages[2].GetProperty("role").GetString());
+        Assert.Equal("The president is Donald Trump.", messages[2].GetProperty("content").GetString());
+        Assert.Equal("How old is he", messages[3].GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public void IsTimeSensitive_DetectsQuestionsThatMustNotBeCached()
+    {
+        Assert.True(ChatGptSearchProvider.IsTimeSensitive("What day is it today"));
+        Assert.True(ChatGptSearchProvider.IsTimeSensitive("what's the weather tomorrow"));
+        Assert.True(ChatGptSearchProvider.IsTimeSensitive("latest news"));
+        Assert.False(ChatGptSearchProvider.IsTimeSensitive("what is fifteen plus fifteen"));
+        Assert.False(ChatGptSearchProvider.IsTimeSensitive("who wrote Hamlet"));
     }
 
     private static ChatGptSearchProvider CreateProvider(

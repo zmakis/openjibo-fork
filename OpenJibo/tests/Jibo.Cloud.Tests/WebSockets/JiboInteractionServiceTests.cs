@@ -2140,6 +2140,23 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Fact]
+    public async Task BuildDecisionAsync_LongNonQuestion_WithKnowledgeSearchConfigured_AsksTheAi()
+    {
+        var search = new StubKnowledgeSearchService(
+            new KnowledgeSearchResult("Fifteen plus fifteen is thirty.", SearchBackendKind.ChatGPT));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "15 plus 15 what's the result",
+            NormalizedTranscript = "15 plus 15 what's the result"
+        });
+
+        Assert.NotEqual("not_understood", decision.IntentName);
+        Assert.Equal(1, search.SearchCount);
+    }
+
+    [Fact]
     public async Task BuildDecisionAsync_UnhandledNonQuestion_WithKnowledgeSearchConfigured_DoesNotSearch()
     {
         var search = new StubKnowledgeSearchService(
