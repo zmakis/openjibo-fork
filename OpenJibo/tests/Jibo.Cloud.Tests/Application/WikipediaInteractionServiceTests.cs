@@ -70,7 +70,7 @@ public sealed class WikipediaInteractionServiceTests
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
-        Assert.StartsWith("According to chat gee pee tee.", decision.ReplyText, StringComparison.Ordinal);
+        Assert.StartsWith("According to Claude.", decision.ReplyText, StringComparison.Ordinal);
         Assert.NotNull(knowledgeSearch.LastQuery);
     }
 

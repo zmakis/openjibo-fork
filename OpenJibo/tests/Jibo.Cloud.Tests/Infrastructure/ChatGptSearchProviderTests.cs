@@ -42,7 +42,12 @@ public sealed class ChatGptSearchProviderTests
         Assert.Contains("80 years old", result.AnswerText);
         Assert.NotNull(capturedRequest);
         Assert.Equal(HttpMethod.Post, capturedRequest!.Method);
-        Assert.Equal("https://api.openai.com/v1/chat/completions", capturedRequest.RequestUri!.ToString());
+        // The endpoint can be overridden (e.g. OPENJIBO_SEARCH_CHATGPT_ENDPOINT for Claude), so compare
+        // against whatever the resolver reports instead of hard-coding OpenAI.
+        Assert.Equal(
+            SearchBackendSettingsResolver.ResolveEndpoint(
+                new SearchBackendSpec(SearchBackendKind.ChatGPT, "test-api-key", "gpt-5.4-nano")),
+            capturedRequest.RequestUri!.ToString());
         Assert.Equal("Bearer", capturedRequest.Headers.Authorization!.Scheme);
         Assert.Equal("test-api-key", capturedRequest.Headers.Authorization.Parameter);
 

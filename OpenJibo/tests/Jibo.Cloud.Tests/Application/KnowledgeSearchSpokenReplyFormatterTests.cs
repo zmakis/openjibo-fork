@@ -7,7 +7,7 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
 {
     [Theory]
     [InlineData(SearchBackendKind.Wolfram, "wolf ram alpha")]
-    [InlineData(SearchBackendKind.ChatGPT, "chat gee pee tee")]
+    [InlineData(SearchBackendKind.ChatGPT, "Claude")]
     [InlineData(SearchBackendKind.Ollama, "ollama")]
     [InlineData(SearchBackendKind.Wikipedia, "wikipedia dot org")]
     public void FormatReply_PrefixesReplyWithSpokenSource(SearchBackendKind backendKind, string spokenSource)
@@ -43,7 +43,7 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
     {
         var reply = KnowledgeSearchSpokenReplyFormatter.FormatReply(input, SearchBackendKind.ChatGPT);
 
-        Assert.Equal($"According to chat gee pee tee. {expectedBody}", reply);
+        Assert.Equal($"According to Claude. {expectedBody}", reply);
     }
 
     [Theory]
