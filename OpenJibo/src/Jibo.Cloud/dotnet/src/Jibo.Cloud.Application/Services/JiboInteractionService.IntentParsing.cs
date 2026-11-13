@@ -249,7 +249,14 @@ public sealed partial class JiboInteractionService
 
     private static bool MatchesAny(string loweredTranscript, params string[] candidates)
     {
-        return candidates.Any(candidate => loweredTranscript.Contains(candidate, StringComparison.Ordinal));
+        return candidates.Any(candidate => ContainsWholeWordOrPhrase(loweredTranscript, candidate));
+    }
+
+    private static bool ContainsWholeWordOrPhrase(string loweredTranscript, string candidate)
+    {
+        if (string.IsNullOrEmpty(candidate)) return false;
+        var pattern = $@"(?<![a-z0-9]){System.Text.RegularExpressions.Regex.Escape(candidate)}(?![a-z0-9])";
+        return System.Text.RegularExpressions.Regex.IsMatch(loweredTranscript, pattern);
     }
 
     private static bool IsAffirmativeReply(string loweredTranscript)

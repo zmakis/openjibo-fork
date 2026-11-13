@@ -68,14 +68,36 @@ public sealed class ChatGptSearchProvider(
             var (systemMessage, userMessage) = JiboKnowledgeSearchPrompts.BuildChatGptMessages(
                 prompt,
                 options.LlmInstructions);
+
+            object userContent = userMessage;
+            const string visionPhotoPath = "/data/vision-latest.jpg";
+            if (System.IO.File.Exists(visionPhotoPath))
+            {
+                try
+                {
+                    var imageBytes = await System.IO.File.ReadAllBytesAsync(visionPhotoPath, cancellationToken);
+                    var imageBase64 = Convert.ToBase64String(imageBytes);
+                    userContent = new object[]
+                    {
+                        new { type = "text", text = userMessage },
+                        new { type = "image_url", image_url = new { url = $"data:image/jpeg;base64,{imageBase64}" } }
+                    };
+                    logger.LogInformation("Attached vision photo to ChatGPT/Claude request ({Bytes} bytes).", imageBytes.Length);
+                }
+                catch (Exception imageEx)
+                {
+                    logger.LogWarning(imageEx, "Failed to attach vision photo, falling back to text-only.");
+                }
+            }
+
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             httpRequest.Content = JsonContent.Create(
                 new ChatCompletionRequest(
                     model,
                     [
-                        new ChatCompletionMessage("system", systemMessage),
-                        new ChatCompletionMessage("user", userMessage)
+                        new ChatCompletionRequestMessage("system", systemMessage),
+                        new ChatCompletionRequestMessage("user", userContent)
                     ]));
 
             using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
@@ -127,13 +149,18 @@ public sealed class ChatGptSearchProvider(
     private sealed record ChatCompletionRequest(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("messages")]
-        IReadOnlyList<ChatCompletionMessage> Messages,
+        IReadOnlyList<ChatCompletionRequestMessage> Messages,
         [property: JsonPropertyName("stream")] bool Stream = false);
 
     private sealed record ChatCompletionMessage(
         [property: JsonPropertyName("role")] string Role,
         [property: JsonPropertyName("content")]
         string Content);
+
+    private sealed record ChatCompletionRequestMessage(
+        [property: JsonPropertyName("role")] string Role,
+        [property: JsonPropertyName("content")]
+        object Content);
 
     private sealed record ChatCompletionResponse(
         [property: JsonPropertyName("choices")]
