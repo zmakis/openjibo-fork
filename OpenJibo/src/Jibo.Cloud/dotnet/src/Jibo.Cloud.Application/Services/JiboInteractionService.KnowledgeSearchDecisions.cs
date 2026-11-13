@@ -22,7 +22,19 @@ public sealed partial class JiboInteractionService
 
         var isQuestion = TranscriptHeuristics.IsLikelyQuestion(transcript);
         if (!isQuestion)
-            return ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
+        {
+            // Fallback: send unrecognised sentences with real content to the AI
+            // instead of answering "I don't understand".
+            var wordCount = transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            if (wordCount < 3 || knowledgeSearchService?.IsConfigured != true)
+                return ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
+
+            await EnsureSearchThinkingPreludeAsync(cancellationToken);
+            var fallbackDecision = await TryBuildKnowledgeSearchDecisionAsync(transcript, cancellationToken);
+            return IsKnowledgeSearchFound(fallbackDecision)
+                ? fallbackDecision!
+                : ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
+        }
 
         var isWhoWhatLookup = WikipediaLookupParser.TryParse(transcript, out _);
         var skipKnowledgeSearch = SkillListenOwnership.IsNonQuestionKnowledgeQuery(lowered);

@@ -38,7 +38,8 @@ public sealed class ChatGptSearchProvider(
 
         var model = SearchBackendSettingsResolver.ResolveModel(request.BackendSpec);
         var cacheKey = BuildCacheKey(request.BackendSpec, model, request.Query.Trim());
-        if (TryGetCachedValue(cacheKey, out var cachedResult))
+        var attachVision = ShouldAttachVisionPhoto(request.Query);
+        if (!attachVision && TryGetCachedValue(cacheKey, out var cachedResult))
             return cachedResult;
 
         var result = await TryCompleteAsync(
@@ -46,7 +47,10 @@ public sealed class ChatGptSearchProvider(
             request.BackendSpec.Credential,
             model,
             request.Query.Trim(),
+            attachVision,
             cancellationToken);
+        if (attachVision)
+            return result;
         SetCachedValue(
             cacheKey,
             result,
@@ -61,6 +65,7 @@ public sealed class ChatGptSearchProvider(
         string apiKey,
         string model,
         string prompt,
+        bool attachVision,
         CancellationToken cancellationToken)
     {
         try
@@ -68,10 +73,11 @@ public sealed class ChatGptSearchProvider(
             var (systemMessage, userMessage) = JiboKnowledgeSearchPrompts.BuildChatGptMessages(
                 prompt,
                 options.LlmInstructions);
+            systemMessage += $"\n\nToday's date is {DateTime.Now:dddd, MMMM d, yyyy}. Answer for today, briefly, in one or two spoken sentences. Do not mention a knowledge cutoff or training data. Only if you are genuinely unsure about a very recent event, say so in a few words.";
 
             object userContent = userMessage;
             const string visionPhotoPath = "/data/vision-latest.jpg";
-            if (System.IO.File.Exists(visionPhotoPath))
+            if (attachVision && System.IO.File.Exists(visionPhotoPath))
             {
                 try
                 {
@@ -120,6 +126,25 @@ public sealed class ChatGptSearchProvider(
             logger.LogWarning(exception, "ChatGPT lookup failed for model {Model}.", model);
             return KnowledgeSearchResult.Unavailable(SearchBackendKind.ChatGPT);
         }
+    }
+
+    private static readonly string[] VisionTriggerPhrases =
+    [
+        "what do you see", "what can you see", "do you see", "look at", "looking at",
+        "what am i wearing", "am i wearing", "what is this", "what's this",
+        "what am i holding", "describe me", "how do i look", "what color is",
+        "who is this", "read this"
+    ];
+
+    private static bool ShouldAttachVisionPhoto(string query)
+    {
+        const string path = "/data/vision-latest.jpg";
+        if (string.IsNullOrWhiteSpace(query) || !System.IO.File.Exists(path))
+            return false;
+        if (DateTime.UtcNow - System.IO.File.GetLastWriteTimeUtc(path) > TimeSpan.FromMinutes(2))
+            return false;
+        var q = query.ToLowerInvariant();
+        return VisionTriggerPhrases.Any(t => q.Contains(t));
     }
 
     private static string BuildCacheKey(SearchBackendSpec spec, string model, string query)
