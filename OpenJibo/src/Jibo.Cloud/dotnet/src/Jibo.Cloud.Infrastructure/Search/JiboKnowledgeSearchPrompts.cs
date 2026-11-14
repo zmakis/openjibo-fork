@@ -40,24 +40,50 @@ internal static class JiboKnowledgeSearchPrompts
     /// Runtime facts the model cannot know on its own (today's date), appended to every prompt
     /// so answers are given for today and without knowledge-cutoff disclaimers.
     /// </summary>
-    public static string BuildRuntimeContext(DateTime now)
+    public static string BuildRuntimeContext(DateTime now) =>
+        BuildRuntimeContext(new DateTimeOffset(DateTime.SpecifyKind(now, DateTimeKind.Utc)).ToUniversalTime(), ResolveLocalTimeZone());
+
+    internal static string BuildRuntimeContext(DateTimeOffset utcNow, TimeZoneInfo? localZone)
     {
-        return $"Today's date is {now:dddd, MMMM d, yyyy}. Answer as of today. " +
-               "Do not mention a knowledge cutoff or your training data. " +
+        var local = localZone is null ? utcNow : TimeZoneInfo.ConvertTime(utcNow, localZone);
+        var zoneText = localZone is null ? "UTC" : $"local time ({localZone.Id})";
+        return $"Right now it is {local:dddd, MMMM d, yyyy, h:mm tt} {zoneText}, which is {utcNow:HH:mm} UTC. " +
+               "Use this for questions about the date or time, including converting to other countries' time zones. " +
+               "Answer as of today. Do not mention a knowledge cutoff or your training data. " +
                "Only if you are genuinely unsure about a very recent event, say so in a few words.";
+    }
+
+    // Local time zone for spoken times: OPENJIBO_TIMEZONE, else OPENJIBO_WEB_SEARCH_TIMEZONE (IANA, e.g. America/Toronto).
+    private static TimeZoneInfo? ResolveLocalTimeZone()
+    {
+        foreach (var name in new[] { "OPENJIBO_TIMEZONE", "OPENJIBO_WEB_SEARCH_TIMEZONE" })
+        {
+            var id = Environment.GetEnvironmentVariable(name)?.Trim();
+            if (string.IsNullOrEmpty(id)) continue;
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (Exception)
+            {
+                // Unknown zone id: fall back to UTC.
+            }
+        }
+
+        return null;
     }
 
     public static string BuildOllamaPrompt(string userRequest, string? configuredInstructions = null)
     {
         var instructions = ResolveInstructions(configuredInstructions);
-        return $"{instructions}\n\n{BuildRuntimeContext(DateTime.Now)}\n\nUser Request:\n{userRequest.Trim()}";
+        return $"{instructions}\n\n{BuildRuntimeContext(DateTime.UtcNow)}\n\nUser Request:\n{userRequest.Trim()}";
     }
 
     public static (string SystemMessage, string UserMessage) BuildChatGptMessages(
         string userRequest,
         string? configuredInstructions = null)
     {
-        var system = $"{ResolveInstructions(configuredInstructions)}\n\n{BuildRuntimeContext(DateTime.Now)}";
+        var system = $"{ResolveInstructions(configuredInstructions)}\n\n{BuildRuntimeContext(DateTime.UtcNow)}";
         return (system, userRequest.Trim());
     }
 }

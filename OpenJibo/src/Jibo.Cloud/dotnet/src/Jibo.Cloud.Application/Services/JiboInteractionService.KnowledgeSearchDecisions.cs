@@ -26,8 +26,11 @@ public sealed partial class JiboInteractionService
             // Fallback: send unrecognised sentences with real content (4+ words) to the AI
             // instead of answering "I don't understand". Short fragments are usually
             // speech-to-text noise ("Gling lang gone") and still get "I don't understand".
+            // Non-Latin text (e.g. Greek) can never match the English commands, so a short
+            // phrase like "με ακούς" ("can you hear me") goes to the AI from 2 words.
             var wordCount = transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-            if (wordCount < 4 || knowledgeSearchService?.IsConfigured != true)
+            var minimumWords = ContainsNonLatinLetters(transcript) ? 2 : 4;
+            if (wordCount < minimumWords || knowledgeSearchService?.IsConfigured != true)
                 return ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
 
             await EnsureSearchThinkingPreludeAsync(cancellationToken);
@@ -98,6 +101,17 @@ public sealed partial class JiboInteractionService
         return ChitchatStateMachine.BuildChatErrorResponseDecision(
             BuildGenericReply(catalog, transcript, lowered),
             transcript);
+    }
+
+    internal static bool ContainsNonLatinLetters(string text)
+    {
+        foreach (var c in text)
+        {
+            if (char.IsLetter(c) && c > '\u024F')
+                return true;
+        }
+
+        return false;
     }
 
     private async Task EnsureSearchThinkingPreludeAsync(CancellationToken cancellationToken)

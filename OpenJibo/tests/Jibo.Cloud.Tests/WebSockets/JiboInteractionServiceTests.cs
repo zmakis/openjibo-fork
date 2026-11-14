@@ -2140,6 +2140,32 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Fact]
+    public async Task BuildDecisionAsync_ShortGreekPhrase_WithKnowledgeSearchConfigured_AsksTheAi()
+    {
+        var search = new StubKnowledgeSearchService(
+            new KnowledgeSearchResult("Yes, I can hear you.", SearchBackendKind.ChatGPT));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "με ακούς",
+            NormalizedTranscript = "με ακούς"
+        });
+
+        Assert.NotEqual("not_understood", decision.IntentName);
+        Assert.Equal(1, search.SearchCount);
+    }
+
+    [Theory]
+    [InlineData("με ακούς", true)]
+    [InlineData("Gling lang gone", false)]
+    [InlineData("café olé", false)]
+    public void ContainsNonLatinLetters_DetectsGreek(string text, bool expected)
+    {
+        Assert.Equal(expected, JiboInteractionService.ContainsNonLatinLetters(text));
+    }
+
+    [Fact]
     public async Task BuildDecisionAsync_LongNonQuestion_WithKnowledgeSearchConfigured_AsksTheAi()
     {
         var search = new StubKnowledgeSearchService(

@@ -330,7 +330,7 @@ public sealed class ChatGptSearchProvider(
     }
 
     private static readonly Regex WebSearchPattern = new(
-        @"\b(today|tonight|yesterday|this (week|weekend|month|year)|latest|recent|recently|news|headlines|current|currently|right now|score|scores|won|winner|game|match|playoffs?|election|stocks?|price of|weather|forecast|released?|coming out|upcoming)\b",
+        @"\b(today|tonight|yesterday|this (week|weekend|month|year)|latest|recent|recently|news|headlines|current|currently|right now|score|scores|won|winner|game|match|playoffs?|election|stocks?|price of|weather|forecast|released?|coming out|upcoming|σήμερα|απόψε|αύριο|χθες|χτες|τώρα|ειδήσεις|νέα|καιρός|καιρό|πρόγνωση|αποτέλεσμα|σκορ|νίκησε|κέρδισε|αγώνας|αγώνα|τελευταία|πρόσφατα|εκλογές|τιμή)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     /// <summary>Questions about current events that need live results.</summary>
@@ -423,7 +423,7 @@ public sealed class ChatGptSearchProvider(
     }
 
     private static readonly Regex TimeSensitivePattern = new(
-        @"\b(today|tonight|tomorrow|yesterday|now|current|currently|latest|recent|news|weather|forecast|score|scores|time|date|this (week|month|year|weekend))\b",
+        @"\b(today|tonight|tomorrow|yesterday|now|current|currently|latest|recent|news|weather|forecast|score|scores|time|date|this (week|month|year|weekend)|ώρα|ημερομηνία|σήμερα|απόψε|αύριο|χθες|χτες|τώρα|ειδήσεις|καιρός|καιρό)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     internal static bool IsTimeSensitive(string query) =>

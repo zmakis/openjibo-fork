@@ -144,7 +144,7 @@ public sealed class ChatGptSearchProviderTests
         using var json = JsonDocument.Parse(capturedBody!);
         var messages = json.RootElement.GetProperty("messages");
         Assert.StartsWith("Custom assistant instructions.", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
-        Assert.Contains("Today's date is", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
+        Assert.Contains("Right now it is", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
         Assert.DoesNotContain("You ARE Jibo", messages[0].GetProperty("content").GetString(), StringComparison.Ordinal);
     }
 
@@ -187,6 +187,8 @@ public sealed class ChatGptSearchProviderTests
         Assert.True(ChatGptSearchProvider.IsTimeSensitive("latest news"));
         Assert.False(ChatGptSearchProvider.IsTimeSensitive("what is fifteen plus fifteen"));
         Assert.False(ChatGptSearchProvider.IsTimeSensitive("who wrote Hamlet"));
+        Assert.True(ChatGptSearchProvider.IsTimeSensitive("τι ώρα είναι στην ελλάδα"));
+        Assert.False(ChatGptSearchProvider.IsTimeSensitive("πες μου ένα αστείο"));
     }
 
     [Theory]
@@ -197,6 +199,9 @@ public sealed class ChatGptSearchProviderTests
     [InlineData("What is fifteen plus fifteen", false)]
     [InlineData("Who wrote Hamlet", false)]
     [InlineData("How old is he", false)]
+    [InlineData("τι ειδήσεις έχει σήμερα", true)]
+    [InlineData("ποιος κέρδισε τον αγώνα", true)]
+    [InlineData("πες μου ένα αστείο", false)]
     public void NeedsWebSearch_OnlyForCurrentEvents(string query, bool expected)
     {
         Assert.Equal(expected, ChatGptSearchProvider.NeedsWebSearch(query));
