@@ -107,7 +107,8 @@ public sealed partial class JiboInteractionService
             if (isSkillOwnedListen)
                 return new JiboInteractionDecision("skill_listen", string.Empty);
 
-            return await BuildChatFallbackDecisionAsync(
+            return await BuildChatFallbackWithAiCommandsAsync(
+                turn,
                 catalog,
                 transcript,
                 lowered,
@@ -1502,7 +1503,8 @@ public sealed partial class JiboInteractionService
             "calendar" => new JiboInteractionDecision("calendar", randomizer.Choose(catalog.CalendarReplies)),
             "commute" => new JiboInteractionDecision("commute", randomizer.Choose(catalog.CommuteReplies)),
             "news" => await BuildNewsDecisionAsync(turn, transcript, catalog, cancellationToken),
-            _ => await BuildChatFallbackDecisionAsync(
+            _ => await BuildChatFallbackWithAiCommandsAsync(
+                turn,
                 catalog,
                 transcript,
                 lowered,

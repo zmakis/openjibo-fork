@@ -52,38 +52,42 @@ public sealed class ChatGptSearchProvider(
         var attachVision = ShouldAttachVisionPhoto(query);
         var history = GetActiveHistory();
 
-        // Live web search (Claude only): used for current-events questions so answers are
-        // up to date. Costs one search fee per question, so it is not used for everything.
-        var useWebSearch = !attachVision &&
-                           IsAnthropicEndpoint(endpoint) &&
-                           IsWebSearchEnabled() &&
-                           NeedsWebSearch(query);
+        // Claude-first brain (Claude only): one native Messages API call that can answer with
+        // a mood, ask Jibo to run a built-in skill (jibo_command tool), or search the web.
+        var isClaude = !attachVision && IsAnthropicEndpoint(endpoint);
+        var useBrain = isClaude && IsClaudeBrainEnabled();
+
+        // Live web search: only for current-events questions (one search fee per question).
+        var useWebSearch = isClaude && IsWebSearchEnabled() && NeedsWebSearch(query);
 
         // A cached answer is only safe when it cannot depend on a photo, on earlier turns,
         // on live web results, or on the current time/date.
         var useCache = !useWebSearch && !attachVision && history.Count == 0 && !IsTimeSensitive(query);
         if (useCache && TryGetCachedValue(cacheKey, out var cachedResult))
         {
-            if (cachedResult?.Outcome == KnowledgeSearchOutcome.Found)
-                RememberTurn(query, cachedResult.AnswerText);
+            RememberResult(query, cachedResult);
             return cachedResult;
         }
 
-        if (useWebSearch)
+        if (useBrain || useWebSearch)
         {
-            var webResult = await TryWebSearchAsync(
+            var claudeResult = await TryClaudeMessagesAsync(
                 request.BackendSpec.Credential,
                 model,
                 query,
                 history,
+                includeCommandTool: useBrain,
+                includeWebSearch: useWebSearch,
                 cancellationToken);
-            if (webResult is not null)
+            if (claudeResult is not null)
             {
-                RememberTurn(query, webResult.AnswerText);
-                return webResult;
+                RememberResult(query, claudeResult);
+                if (useCache && string.IsNullOrEmpty(claudeResult.CommandPhrase))
+                    SetCachedValue(cacheKey, claudeResult, options.CacheTtlSeconds);
+                return claudeResult;
             }
 
-            // Web search failed or was refused: fall through to a normal answer.
+            // Claude call failed or was refused: fall through to the plain answer path.
         }
 
         var result = await TryCompleteAsync(
@@ -95,8 +99,7 @@ public sealed class ChatGptSearchProvider(
             history,
             cancellationToken);
 
-        if (result.Outcome == KnowledgeSearchOutcome.Found)
-            RememberTurn(query, result.AnswerText);
+        RememberResult(query, result);
 
         if (useCache)
         {
@@ -203,11 +206,33 @@ public sealed class ChatGptSearchProvider(
         "You can search the web. Use it for anything current or recent, then answer in one to three " +
         "short spoken sentences. Never read out website names, links or citations.";
 
-    private async Task<KnowledgeSearchResult?> TryWebSearchAsync(
+    private const string BrainInstructions =
+        "Start every spoken answer with exactly one mood tag, [happy], [neutral] or [sad], matching how " +
+        "Jibo should sound, for example: [happy] Here is a fun one for you. " +
+        "If the user wants Jibo to do something it has a built-in skill for, or asks about Jibo itself, " +
+        "call the jibo_command tool instead of answering, in any language the user speaks. " +
+        "Answer general questions, conversation and facts about the world yourself. " +
+        "Questions about the time in another city or country are general questions: answer them yourself.";
+
+    private const string JiboCommandToolName = "jibo_command";
+
+    private const string JiboCommandToolDescription =
+        "Run one of Jibo's built-in skills. Use it when the user wants Jibo to do something it has a skill " +
+        "for, or asks about Jibo itself, in any language or wording. Skills: timers and alarms (set, cancel, " +
+        "check), the local time and date, weather, news, calendar, commute, volume (up, down, or a number), " +
+        "stop, go to sleep, wake up, dance, turn around, take a picture, show the photo gallery, play the " +
+        "radio (optionally a genre), roll dice, spell a word, define a word, word of the day, fun fact, tell " +
+        "a joke, tell a story, surprise me, shopping and to-do lists, smart-home lights and thermostat, and " +
+        "questions about Jibo itself (its name, age, favourites, feelings, where it was born). Do not use it " +
+        "for general questions, conversation or facts about the world.";
+
+    private async Task<KnowledgeSearchResult?> TryClaudeMessagesAsync(
         string apiKey,
         string model,
         string query,
         IReadOnlyList<ConversationTurn> history,
+        bool includeCommandTool,
+        bool includeWebSearch,
         CancellationToken cancellationToken)
     {
         try
@@ -215,13 +240,18 @@ public sealed class ChatGptSearchProvider(
             var (systemMessage, _) = JiboKnowledgeSearchPrompts.BuildChatGptMessages(
                 query,
                 options.LlmInstructions);
-            systemMessage += "\n\n" + WebSearchInstructions;
+            if (includeCommandTool)
+                systemMessage += "\n\n" + BrainInstructions;
+            if (includeWebSearch)
+                systemMessage += "\n\n" + WebSearchInstructions;
 
-            var body = BuildWebSearchRequestBody(
+            var body = BuildClaudeRequestBody(
                 model,
                 systemMessage,
                 history.Select(turn => (turn.User, turn.Assistant)).ToList(),
                 query,
+                includeCommandTool,
+                includeWebSearch,
                 ResolveWebSearchMaxUses(),
                 ResolveWebSearchUserLocation());
 
@@ -235,23 +265,37 @@ public sealed class ChatGptSearchProvider(
             if (!response.IsSuccessStatusCode)
             {
                 logger.LogWarning(
-                    "Claude web search failed with status {StatusCode}: {Body}",
+                    "Claude request failed with status {StatusCode}: {Body}",
                     response.StatusCode,
                     responseBody.Length > 300 ? responseBody[..300] : responseBody);
                 return null;
             }
 
-            var (answer, searches) = ExtractWebSearchAnswer(responseBody);
-            var spoken = KnowledgeSearchResponseFormatter.NormalizeForSpeech(answer);
+            var reply = ExtractClaudeReply(responseBody);
+            if (!string.IsNullOrWhiteSpace(reply.Command))
+            {
+                logger.LogInformation("Claude brain chose a Jibo skill: {Command}", reply.Command);
+                return new KnowledgeSearchResult(
+                    string.Empty,
+                    SearchBackendKind.ChatGPT,
+                    KnowledgeSearchOutcome.Found,
+                    CommandPhrase: reply.Command);
+            }
+
+            var (mood, text) = ParseMood(reply.Answer);
+            var spoken = KnowledgeSearchResponseFormatter.NormalizeForSpeech(text);
             if (string.IsNullOrWhiteSpace(spoken))
                 return null;
 
-            logger.LogInformation("Answered with Claude web search (searches={Searches}).", searches);
-            return new KnowledgeSearchResult(spoken, SearchBackendKind.ChatGPT);
+            logger.LogInformation(
+                "Answered with Claude (mood={Mood}, searches={Searches}).",
+                mood ?? "neutral",
+                reply.Searches);
+            return new KnowledgeSearchResult(spoken, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(exception, "Claude web search failed; falling back to a normal answer.");
+            logger.LogWarning(exception, "Claude request failed; falling back to a plain answer.");
             return null;
         }
     }
@@ -261,6 +305,17 @@ public sealed class ChatGptSearchProvider(
         string systemMessage,
         IReadOnlyList<(string User, string Assistant)> history,
         string query,
+        int maxUses,
+        JsonObject? userLocation) =>
+        BuildClaudeRequestBody(model, systemMessage, history, query, false, true, maxUses, userLocation);
+
+    internal static string BuildClaudeRequestBody(
+        string model,
+        string systemMessage,
+        IReadOnlyList<(string User, string Assistant)> history,
+        string query,
+        bool includeCommandTool,
+        bool includeWebSearch,
         int maxUses,
         JsonObject? userLocation)
     {
@@ -273,24 +328,73 @@ public sealed class ChatGptSearchProvider(
 
         messages.Add(new JsonObject { ["role"] = "user", ["content"] = query });
 
-        var tool = new JsonObject
+        var tools = new JsonArray();
+        if (includeWebSearch)
         {
-            ["type"] = WebSearchToolType,
-            ["name"] = "web_search",
-            ["max_uses"] = maxUses
-        };
-        if (userLocation is not null)
-            tool["user_location"] = userLocation;
+            var webSearch = new JsonObject
+            {
+                ["type"] = WebSearchToolType,
+                ["name"] = "web_search",
+                ["max_uses"] = maxUses
+            };
+            if (userLocation is not null)
+                webSearch["user_location"] = userLocation;
+            tools.Add(webSearch);
+        }
+
+        if (includeCommandTool)
+        {
+            tools.Add(new JsonObject
+            {
+                ["name"] = JiboCommandToolName,
+                ["description"] = JiboCommandToolDescription,
+                ["input_schema"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["command"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["description"] =
+                                "The request as a short, simple English command or question, for example " +
+                                "'set a timer for 5 minutes', 'dance', 'take a picture', 'turn the volume up', " +
+                                "'what is your favorite color', 'play jazz radio'."
+                        }
+                    },
+                    ["required"] = new JsonArray { "command" }
+                }
+            });
+        }
 
         var body = new JsonObject
         {
             ["model"] = model,
             ["max_tokens"] = 400,
             ["system"] = systemMessage,
-            ["messages"] = messages,
-            ["tools"] = new JsonArray { tool }
+            ["messages"] = messages
         };
+        if (tools.Count > 0)
+            body["tools"] = tools;
         return body.ToJsonString();
+    }
+
+    private static readonly Regex MoodTagPattern = new(
+        @"\[(happy|neutral|sad)\]\s*",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>Splits a leading [happy]/[neutral]/[sad] tag off the answer and removes any stray tags.</summary>
+    internal static (string? Mood, string Text) ParseMood(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return (null, string.Empty);
+
+        var trimmed = answer.TrimStart();
+        string? mood = null;
+        var leading = MoodTagPattern.Match(trimmed);
+        if (leading.Success && leading.Index == 0)
+            mood = leading.Groups[1].Value.ToLowerInvariant();
+
+        return (mood, MoodTagPattern.Replace(trimmed, string.Empty).Trim());
     }
 
     /// <summary>
@@ -299,6 +403,17 @@ public sealed class ChatGptSearchProvider(
     /// the last search result is used (or all text when no search happened).
     /// </summary>
     internal static (string Answer, int Searches) ExtractWebSearchAnswer(string responseJson)
+    {
+        var reply = ExtractClaudeReply(responseJson);
+        return (reply.Answer, reply.Searches);
+    }
+
+    /// <summary>
+    /// Reads a Messages API response: the spoken text after the last web search result (or all
+    /// text when no search happened), the jibo_command tool call if Claude chose one, and the
+    /// number of web searches billed.
+    /// </summary>
+    internal static (string Answer, string? Command, int Searches) ExtractClaudeReply(string responseJson)
     {
         using var document = JsonDocument.Parse(responseJson);
         var root = document.RootElement;
@@ -311,9 +426,24 @@ public sealed class ChatGptSearchProvider(
             searches = requests.GetInt32();
 
         if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
-            return (string.Empty, searches);
+            return (string.Empty, null, searches);
 
         var blocks = content.EnumerateArray().ToList();
+
+        string? command = null;
+        foreach (var block in blocks)
+        {
+            if (block.TryGetProperty("type", out var type) && type.GetString() == "tool_use" &&
+                block.TryGetProperty("name", out var name) && name.GetString() == JiboCommandToolName &&
+                block.TryGetProperty("input", out var input) &&
+                input.TryGetProperty("command", out var commandValue) &&
+                commandValue.ValueKind == JsonValueKind.String)
+            {
+                command = commandValue.GetString()?.Trim();
+                break;
+            }
+        }
+
         var lastSearchResult = blocks.FindLastIndex(block =>
             block.TryGetProperty("type", out var type) && type.GetString() == "web_search_tool_result");
 
@@ -326,7 +456,7 @@ public sealed class ChatGptSearchProvider(
                 answer.Append(text.GetString());
         }
 
-        return (answer.ToString().Trim(), searches);
+        return (answer.ToString().Trim(), string.IsNullOrWhiteSpace(command) ? null : command, searches);
     }
 
     private static readonly Regex WebSearchPattern = new(
@@ -340,6 +470,22 @@ public sealed class ChatGptSearchProvider(
     internal static bool IsAnthropicEndpoint(string endpoint) =>
         Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) &&
         uri.Host.Equals("api.anthropic.com", StringComparison.OrdinalIgnoreCase);
+
+    // OPENJIBO_CLAUDE_BRAIN=false turns the Claude-first brain (skills tool + mood) off.
+    private static bool IsClaudeBrainEnabled() =>
+        !string.Equals(
+            Environment.GetEnvironmentVariable("OPENJIBO_CLAUDE_BRAIN")?.Trim(),
+            "false",
+            StringComparison.OrdinalIgnoreCase);
+
+    private void RememberResult(string query, KnowledgeSearchResult? result)
+    {
+        if (result?.Outcome != KnowledgeSearchOutcome.Found) return;
+        if (!string.IsNullOrWhiteSpace(result.CommandPhrase))
+            RememberTurn(query, $"(Jibo ran its skill: {result.CommandPhrase})");
+        else
+            RememberTurn(query, result.AnswerText);
+    }
 
     // OPENJIBO_WEB_SEARCH=false turns live web search off.
     private static bool IsWebSearchEnabled() =>

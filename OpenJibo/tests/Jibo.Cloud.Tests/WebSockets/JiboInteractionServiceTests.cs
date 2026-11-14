@@ -2140,6 +2140,92 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Fact]
+    public async Task BuildDecisionAsync_AiCommand_RunsTheSkillRouter_ForGreekTimerRequest()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            string.Empty,
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            CommandPhrase: "set a timer for five minutes"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "βάλε ένα χρονόμετρο για πέντε λεπτά",
+            NormalizedTranscript = "βάλε ένα χρονόμετρο για πέντε λεπτά"
+        });
+
+        Assert.Equal("timer_value", decision.IntentName);
+        Assert.Equal("@be/clock", decision.SkillName);
+        Assert.Equal("5", decision.SkillPayload!["minutes"]);
+        Assert.Equal(1, search.SearchCount);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_AiCommand_UnknownToRouter_SaysNotYet_WithoutAskingAgain()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            string.Empty,
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            CommandPhrase: "xyzzy plugh frobnicate"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "κάνε κάτι πολύ περίεργο τώρα",
+            NormalizedTranscript = "κάνε κάτι πολύ περίεργο τώρα"
+        });
+
+        Assert.Equal("ai_command_unsupported", decision.IntentName);
+        Assert.Contains("can't do that yet", decision.ReplyText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, search.SearchCount);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_AiAnswerWithHappyMood_SpeaksWithHappyBodyLanguage()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            "Rainbows happen when sunlight bends through raindrops.",
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            Mood: "happy"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "why do rainbows happen",
+            NormalizedTranscript = "why do rainbows happen"
+        });
+
+        Assert.Equal("knowledge_search", decision.IntentName);
+        var esml = decision.SkillPayload!["esml"]?.ToString();
+        Assert.Contains("cat='happy'", esml, StringComparison.Ordinal);
+        Assert.Contains("Rainbows happen", esml, StringComparison.Ordinal);
+        Assert.NotNull(decision.SkillPayload["cloudSkill"]);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_AiAnswerWithNeutralMood_KeepsDefaultRendering()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            "Paris is the capital of France.",
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            Mood: "neutral"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "what is the capital of france",
+            NormalizedTranscript = "what is the capital of france"
+        });
+
+        Assert.Equal("knowledge_search", decision.IntentName);
+        Assert.False(decision.SkillPayload!.ContainsKey("esml"));
+    }
+
+    [Fact]
     public async Task BuildDecisionAsync_ShortGreekPhrase_WithKnowledgeSearchConfigured_AsksTheAi()
     {
         var search = new StubKnowledgeSearchService(

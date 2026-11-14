@@ -286,6 +286,70 @@ public sealed class ChatGptSearchProviderTests
         Assert.Equal(0, searches);
     }
 
+    [Theory]
+    [InlineData("[happy] Here is a fun one!", "happy", "Here is a fun one!")]
+    [InlineData("  [Neutral]  Paris is the capital.", "neutral", "Paris is the capital.")]
+    [InlineData("Hello [sad] there", null, "Hello there")]
+    [InlineData("No tag at all.", null, "No tag at all.")]
+    public void ParseMood_SplitsLeadingTagAndRemovesStrayTags(string input, string? mood, string text)
+    {
+        var (parsedMood, parsedText) = ChatGptSearchProvider.ParseMood(input);
+
+        Assert.Equal(mood, parsedMood);
+        Assert.Equal(text, parsedText);
+    }
+
+    [Fact]
+    public void ExtractClaudeReply_ReadsJiboCommandToolCall()
+    {
+        const string response = """
+            {
+              "content": [
+                { "type": "text", "text": "Sure!" },
+                { "type": "tool_use", "id": "toolu_1", "name": "jibo_command", "input": { "command": "set a timer for 5 minutes" } }
+              ],
+              "stop_reason": "tool_use",
+              "usage": { "input_tokens": 900, "output_tokens": 30 }
+            }
+            """;
+
+        var (_, command, searches) = ChatGptSearchProvider.ExtractClaudeReply(response);
+
+        Assert.Equal("set a timer for 5 minutes", command);
+        Assert.Equal(0, searches);
+    }
+
+    [Fact]
+    public void ExtractClaudeReply_NoCommandForPlainAnswer()
+    {
+        const string response = """{"content":[{"type":"text","text":"[happy] Thirty!"}],"usage":{"input_tokens":10,"output_tokens":4}}""";
+
+        var (answer, command, _) = ChatGptSearchProvider.ExtractClaudeReply(response);
+
+        Assert.Equal("[happy] Thirty!", answer);
+        Assert.Null(command);
+    }
+
+    [Fact]
+    public void BuildClaudeRequestBody_AddsJiboCommandTool_AndWebSearchOnlyWhenAsked()
+    {
+        var withBoth = ChatGptSearchProvider.BuildClaudeRequestBody("m", "s", [], "q", true, true, 2, null);
+        var commandOnly = ChatGptSearchProvider.BuildClaudeRequestBody("m", "s", [], "q", true, false, 2, null);
+        var none = ChatGptSearchProvider.BuildClaudeRequestBody("m", "s", [], "q", false, false, 2, null);
+
+        using var both = JsonDocument.Parse(withBoth);
+        Assert.Equal(2, both.RootElement.GetProperty("tools").GetArrayLength());
+
+        using var cmd = JsonDocument.Parse(commandOnly);
+        var tool = cmd.RootElement.GetProperty("tools")[0];
+        Assert.Equal("jibo_command", tool.GetProperty("name").GetString());
+        Assert.Equal("object", tool.GetProperty("input_schema").GetProperty("type").GetString());
+        Assert.Equal("command", tool.GetProperty("input_schema").GetProperty("required")[0].GetString());
+
+        using var plain = JsonDocument.Parse(none);
+        Assert.False(plain.RootElement.TryGetProperty("tools", out _));
+    }
+
     private static ChatGptSearchProvider CreateProvider(
         HttpMessageHandler handler,
         string? apiKey = "test-api-key",

@@ -175,11 +175,17 @@ public sealed partial class JiboInteractionService
         if (result is null)
             return ChitchatStateMachine.BuildKnowledgeSearchUnavailableDecision();
 
+        // Claude-first brain: the AI recognised a request for a built-in skill.
+        if (!string.IsNullOrWhiteSpace(result.CommandPhrase))
+            return BuildAiCommandDecision(result.CommandPhrase);
+
         return result.Outcome switch
         {
             KnowledgeSearchOutcome.Found when !string.IsNullOrWhiteSpace(result.AnswerText) =>
-                ChitchatStateMachine.BuildKnowledgeSearchResponseDecision(
-                    KnowledgeSearchSpokenReplyFormatter.FormatReply(result.AnswerText, result.BackendKind)),
+                WithMood(
+                    ChitchatStateMachine.BuildKnowledgeSearchResponseDecision(
+                        KnowledgeSearchSpokenReplyFormatter.FormatReply(result.AnswerText, result.BackendKind)),
+                    result.Mood),
             KnowledgeSearchOutcome.Unavailable =>
                 ChitchatStateMachine.BuildKnowledgeSearchUnavailableDecision(),
             _ => ChitchatStateMachine.BuildKnowledgeSearchNotFoundDecision(transcript)
@@ -196,7 +202,36 @@ public sealed partial class JiboInteractionService
 
     private static bool IsKnowledgeSearchFound(JiboInteractionDecision? decision) =>
         decision is not null &&
-        string.Equals(decision.IntentName, "knowledge_search", StringComparison.OrdinalIgnoreCase);
+        (string.Equals(decision.IntentName, "knowledge_search", StringComparison.OrdinalIgnoreCase) ||
+         string.Equals(decision.IntentName, AiCommandIntent, StringComparison.OrdinalIgnoreCase));
+
+    internal const string AiCommandIntent = "ai_command";
+    internal const string AiCommandPayloadKey = "ai_command";
+
+    private static JiboInteractionDecision BuildAiCommandDecision(string commandPhrase) =>
+        new(
+            AiCommandIntent,
+            string.Empty,
+            SkillPayload: new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                [AiCommandPayloadKey] = commandPhrase.Trim()
+            });
+
+    // Speak the answer with Jibo's embodied-speech mood (body language) when the AI chose
+    // happy or sad; neutral keeps the default rendering.
+    internal static JiboInteractionDecision WithMood(JiboInteractionDecision decision, string? mood)
+    {
+        var category = mood?.Trim().ToLowerInvariant();
+        if (category is not ("happy" or "sad") || string.IsNullOrWhiteSpace(decision.ReplyText))
+            return decision;
+
+        var payload = decision.SkillPayload is null
+            ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, object?>(decision.SkillPayload, StringComparer.OrdinalIgnoreCase);
+        payload["esml"] =
+            $"<speak><es cat='{category}' filter='!ssa-only, !sfx-only' endNeutral='true'>{EscapeForEsml(decision.ReplyText)}</es></speak>";
+        return decision with { SkillPayload = payload };
+    }
 
     private static bool IsKnowledgeSearchUnavailable(JiboInteractionDecision? decision) =>
         decision is not null &&
