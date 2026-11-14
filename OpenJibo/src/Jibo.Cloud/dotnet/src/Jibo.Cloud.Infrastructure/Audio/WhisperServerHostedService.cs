@@ -85,6 +85,9 @@ public sealed class WhisperServerHostedService(
             arguments.Add(resolved.WhisperLanguage);
         }
 
+        if (resolved.WhisperTranslate)
+            arguments.Add("-tr");
+
         try
         {
             var process = new Process

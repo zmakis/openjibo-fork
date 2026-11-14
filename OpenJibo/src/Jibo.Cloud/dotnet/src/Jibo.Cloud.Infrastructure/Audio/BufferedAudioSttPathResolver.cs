@@ -82,7 +82,12 @@ public static class BufferedAudioSttPathResolver
             AzureSpeechSubscriptionKey = source.AzureSpeechSubscriptionKey,
             AzureSpeechEndpoint = source.AzureSpeechEndpoint,
             AzureSpeechRequestTimeout = source.AzureSpeechRequestTimeout,
-            WhisperLanguage = source.WhisperLanguage,
+            WhisperLanguage = ResolveEnvironmentOverride(
+                ["OPENJIBO_STT_WHISPER_LANGUAGE", "WHISPER_LANGUAGE"],
+                getEnvironmentVariable) ?? source.WhisperLanguage,
+            WhisperTranslate = source.WhisperTranslate || IsTruthy(ResolveEnvironmentOverride(
+                ["OPENJIBO_STT_WHISPER_TRANSLATE", "WHISPER_TRANSLATE"],
+                getEnvironmentVariable)),
             WhisperAudioContext = ResolvePositiveInt(
                 source.WhisperAudioContext,
                 ["OPENJIBO_STT_WHISPER_AUDIO_CTX", "WHISPER_AUDIO_CTX"],
@@ -641,6 +646,22 @@ public static class BufferedAudioSttPathResolver
         candidates.Add("whisper-server");
         return candidates;
     }
+
+    private static string? ResolveEnvironmentOverride(
+        IReadOnlyList<string> environmentVariableNames,
+        Func<string, string?> getEnvironmentVariable)
+    {
+        return environmentVariableNames
+            .Select(getEnvironmentVariable)
+            .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+            ?.Trim();
+    }
+
+    private static bool IsTruthy(string? value) =>
+        value is not null &&
+        (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+         value.Equals("1", StringComparison.Ordinal) ||
+         value.Equals("yes", StringComparison.OrdinalIgnoreCase));
 
     private static string? ResolveOptionalString(
         string? configured,

@@ -294,7 +294,7 @@ public sealed class LocalWhisperCppBufferedAudioSttStrategy(
         var audioContext = _options.WhisperAudioContext > 0 ? _options.WhisperAudioContext : 512;
         var beamSize = _options.WhisperBeamSize > 0 ? _options.WhisperBeamSize : 1;
 
-        return
+        List<string> arguments =
         [
             "-m", _options.WhisperModelPath!,
             "-f", wavPath,
@@ -304,6 +304,9 @@ public sealed class LocalWhisperCppBufferedAudioSttStrategy(
             "-bs", beamSize.ToString(),
             "-nt"
         ];
+        if (_options.WhisperTranslate)
+            arguments.Add("-tr");
+        return arguments;
     }
 
     private static string? ReadTranscriptHint(TurnContext turn)

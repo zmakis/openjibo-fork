@@ -21,7 +21,16 @@ public sealed class BufferedAudioSttOptions
     public string? AzureSpeechSubscriptionKey { get; set; }
     public string? AzureSpeechEndpoint { get; set; }
     public TimeSpan AzureSpeechRequestTimeout { get; set; } = TimeSpan.FromSeconds(8);
+    /// <summary>
+    /// Spoken language: "en", "el", ... or "auto" to detect per turn (needs a multilingual
+    /// model such as base-q5_1, not a ".en" model). Env: OPENJIBO_STT_WHISPER_LANGUAGE.
+    /// </summary>
     public string WhisperLanguage { get; set; } = "en";
+    /// <summary>
+    /// Translate any spoken language to English text (whisper "translate" task), so the rest
+    /// of the pipeline stays English. Needs a multilingual model. Env: OPENJIBO_STT_WHISPER_TRANSLATE.
+    /// </summary>
+    public bool WhisperTranslate { get; set; }
     /// <summary>whisper.cpp --audio-ctx. 512 covers ~10s of audio and avoids the 30s pad.</summary>
     public int WhisperAudioContext { get; set; } = 512;
     /// <summary>whisper.cpp -t. 0 means Environment.ProcessorCount.</summary>

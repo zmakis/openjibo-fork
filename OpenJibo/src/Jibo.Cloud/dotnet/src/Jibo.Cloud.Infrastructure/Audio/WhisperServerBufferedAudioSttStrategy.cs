@@ -154,6 +154,8 @@ public sealed class WhisperServerBufferedAudioSttStrategy(
         content.Add(new StringContent("0.2"), "temperature_inc");
         content.Add(new StringContent("json"), "response_format");
         content.Add(new StringContent(_options.WhisperLanguage), "language");
+        if (_options.WhisperTranslate)
+            content.Add(new StringContent("true"), "translate");
         if (_options.WhisperAudioContext > 0)
             content.Add(new StringContent(_options.WhisperAudioContext.ToString()), "audio_ctx");
 

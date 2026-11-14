@@ -246,6 +246,51 @@ public sealed class LocalWhisperCppBufferedAudioSttStrategyTests
     }
 
     [Fact]
+    public void Resolve_ReadsWhisperLanguageAndTranslateFromEnv()
+    {
+        var resolved = BufferedAudioSttPathResolver.Resolve(
+            new BufferedAudioSttOptions
+            {
+                EnableLocalWhisperCpp = true,
+                FfmpegPath = "ffmpeg",
+                WhisperCliPath = "whisper-cli",
+                WhisperModelPath = "models/ggml-base-q5_1.bin"
+            },
+            name => name switch
+            {
+                "OPENJIBO_STT_WHISPER_LANGUAGE" => "auto",
+                "OPENJIBO_STT_WHISPER_TRANSLATE" => "true",
+                _ => null
+            },
+            _ => true,
+            null,
+            OperatingSystemPlatform.Linux);
+
+        Assert.Equal("auto", resolved.WhisperLanguage);
+        Assert.True(resolved.WhisperTranslate);
+    }
+
+    [Fact]
+    public void Resolve_DefaultsToEnglishWithoutTranslate()
+    {
+        var resolved = BufferedAudioSttPathResolver.Resolve(
+            new BufferedAudioSttOptions
+            {
+                EnableLocalWhisperCpp = true,
+                FfmpegPath = "ffmpeg",
+                WhisperCliPath = "whisper-cli",
+                WhisperModelPath = "models/ggml-base.en.bin"
+            },
+            _ => null,
+            _ => true,
+            null,
+            OperatingSystemPlatform.Linux);
+
+        Assert.Equal("en", resolved.WhisperLanguage);
+        Assert.False(resolved.WhisperTranslate);
+    }
+
+    [Fact]
     public void TryParseLoopbackEndpoint_AcceptsLoopbackHttpUrls()
     {
         Assert.True(WhisperServerHostedService.TryParseLoopbackEndpoint(
