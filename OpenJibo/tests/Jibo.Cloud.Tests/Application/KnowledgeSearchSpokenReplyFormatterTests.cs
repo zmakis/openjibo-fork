@@ -10,13 +10,15 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
     [InlineData(SearchBackendKind.ChatGPT, "Claude")]
     [InlineData(SearchBackendKind.Ollama, "ollama")]
     [InlineData(SearchBackendKind.Wikipedia, "wikipedia dot org")]
-    public void FormatReply_PrefixesReplyWithSpokenSource(SearchBackendKind backendKind, string spokenSource)
+    public void FormatReply_AnswersWithoutAnnouncingSource(SearchBackendKind backendKind, string spokenSource)
     {
         var reply = KnowledgeSearchSpokenReplyFormatter.FormatReply(
             "The answer is forty two.",
             backendKind);
 
-        Assert.Equal($"According to {spokenSource}. The answer is forty two.", reply);
+        Assert.Equal("The answer is forty two.", reply);
+        Assert.DoesNotContain(spokenSource, reply, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("According to", reply, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -43,7 +45,7 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
     {
         var reply = KnowledgeSearchSpokenReplyFormatter.FormatReply(input, SearchBackendKind.ChatGPT);
 
-        Assert.Equal($"According to Claude. {expectedBody}", reply);
+        Assert.Equal(expectedBody, reply);
     }
 
     [Theory]
@@ -66,7 +68,7 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
     {
         var reply = KnowledgeSearchSpokenReplyFormatter.FormatReply(input, SearchBackendKind.Wikipedia);
 
-        Assert.Equal($"According to wikipedia dot org. {expectedBody}", reply);
+        Assert.Equal(expectedBody, reply);
     }
 
     [Theory]
@@ -86,7 +88,7 @@ public sealed class KnowledgeSearchSpokenReplyFormatterTests
     {
         var reply = KnowledgeSearchSpokenReplyFormatter.FormatReply(input, SearchBackendKind.Wolfram);
 
-        Assert.Equal($"According to wolf ram alpha. {expectedBody}", reply);
+        Assert.Equal(expectedBody, reply);
     }
 
     [Fact]

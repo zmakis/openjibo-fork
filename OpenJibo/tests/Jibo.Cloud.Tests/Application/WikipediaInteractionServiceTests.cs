@@ -25,7 +25,7 @@ public sealed class WikipediaInteractionServiceTests
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
-        Assert.StartsWith("According to wolf ram alpha.", decision.ReplyText, StringComparison.Ordinal);
+        Assert.Equal("James Garfield was the twentieth US president.", decision.ReplyText);
         Assert.Equal(0, wikipedia.CallCount);
     }
 
@@ -46,7 +46,7 @@ public sealed class WikipediaInteractionServiceTests
 
         Assert.Equal("knowledge_search", decision.IntentName);
         Assert.Equal(
-            "According to wikipedia dot org. James Abram Garfield was the 20th president of the United States.",
+            "James Abram Garfield was the 20th president of the United States.",
             decision.ReplyText);
     }
 
@@ -69,7 +69,7 @@ public sealed class WikipediaInteractionServiceTests
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
-        Assert.StartsWith("According to wolf ram alpha.", decision.ReplyText, StringComparison.Ordinal);
+        Assert.DoesNotContain("According to", decision.ReplyText, StringComparison.Ordinal);
         Assert.Contains("James Garfield", decision.ReplyText, StringComparison.Ordinal);
         Assert.Equal("who is the 20th president", knowledgeSearch.LastQuery);
     }
@@ -91,7 +91,7 @@ public sealed class WikipediaInteractionServiceTests
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
-        Assert.StartsWith("According to Claude.", decision.ReplyText, StringComparison.Ordinal);
+        Assert.Equal("Jibo was a social home robot.", decision.ReplyText);
         Assert.NotNull(knowledgeSearch.LastQuery);
     }
 
@@ -110,7 +110,7 @@ public sealed class WikipediaInteractionServiceTests
 
         Assert.Equal("knowledge_search", decision.IntentName);
         Assert.Equal(
-            "According to wikipedia dot org. Mount Everest is Earth's highest mountain above sea level.",
+            "Mount Everest is Earth's highest mountain above sea level.",
             decision.ReplyText);
     }
 
@@ -151,7 +151,7 @@ public sealed class WikipediaInteractionServiceTests
 
         Assert.Equal("knowledge_search", decision.IntentName);
         Assert.Equal(
-            "According to wikipedia dot org. James Abram Garfield was the 20th president of the United States.",
+            "James Abram Garfield was the 20th president of the United States.",
             decision.ReplyText);
         Assert.Equal(2, wikipedia.CallCount);
         Assert.True(wikipedia.LastBypassCache);

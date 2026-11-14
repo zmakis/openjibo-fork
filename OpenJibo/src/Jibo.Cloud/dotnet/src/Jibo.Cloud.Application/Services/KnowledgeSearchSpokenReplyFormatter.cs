@@ -36,8 +36,9 @@ internal static partial class KnowledgeSearchSpokenReplyFormatter
     {
         if (string.IsNullOrWhiteSpace(answerText)) return string.Empty;
 
-        var spokenBody = ReplaceSpokenTerms(NormalizeHtmlEntities(answerText.Trim()));
-        return $"According to {DescribeSource(backendKind)}. {spokenBody}";
+        // Jibo answers directly, without announcing the source ("According to ...").
+        // DescribeSource is kept for logs/diagnostics.
+        return ReplaceSpokenTerms(NormalizeHtmlEntities(answerText.Trim()));
     }
 
     public static string FormatNotFoundReply() => "I can't find anything.";
