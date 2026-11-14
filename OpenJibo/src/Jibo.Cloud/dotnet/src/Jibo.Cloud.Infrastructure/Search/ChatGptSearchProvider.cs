@@ -220,6 +220,12 @@ public sealed class ChatGptSearchProvider(
         "Answer general questions, conversation and facts about the world yourself. " +
         "Questions about the time in another city or country are general questions: answer them yourself.";
 
+    private static readonly string AnimationInstructions =
+        "Jibo can show an animation on its screen while it speaks. When one clearly fits, add exactly one " +
+        "tag [anim:NAME] at the end of your answer, using only these names: " +
+        JiboAnimationCatalog.BuildPromptMenu() +
+        " For example: [happy] Pizza is my favourite too! [anim:pizza]. Leave it out when nothing fits.";
+
     private const string JiboCommandToolName = "jibo_command";
 
     private const string JiboCommandToolDescription =
@@ -247,7 +253,7 @@ public sealed class ChatGptSearchProvider(
                 query,
                 options.LlmInstructions);
             if (includeCommandTool)
-                systemMessage += "\n\n" + BrainInstructions;
+                systemMessage += "\n\n" + BrainInstructions + "\n\n" + AnimationInstructions;
             if (includeWebSearch)
                 systemMessage += "\n\n" + WebSearchInstructions;
 
@@ -288,16 +294,23 @@ public sealed class ChatGptSearchProvider(
                     CommandPhrase: reply.Command);
             }
 
-            var (mood, text) = ParseMood(reply.Answer);
+            var (mood, moodless) = ParseMood(reply.Answer);
+            var (animation, text) = ParseAnimation(moodless);
             var spoken = KnowledgeSearchResponseFormatter.NormalizeForSpeech(text);
             if (string.IsNullOrWhiteSpace(spoken))
                 return null;
 
             logger.LogInformation(
-                "Answered with Claude (mood={Mood}, searches={Searches}).",
+                "Answered with Claude (mood={Mood}, animation={Animation}, searches={Searches}).",
                 mood ?? "neutral",
+                animation ?? "none",
                 reply.Searches);
-            return new KnowledgeSearchResult(spoken, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood);
+            return new KnowledgeSearchResult(
+                spoken,
+                SearchBackendKind.ChatGPT,
+                KnowledgeSearchOutcome.Found,
+                mood,
+                Animation: animation);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -388,6 +401,23 @@ public sealed class ChatGptSearchProvider(
     private static readonly Regex MoodTagPattern = new(
         @"\[(happy|neutral|sad)\]\s*",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex AnimationTagPattern = new(
+        @"\[anim:\s*([a-z0-9\- ]+?)\s*\]\s*",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>
+    /// Takes the first [anim:name] tag out of the answer (validated later against the robot's
+    /// catalog) and removes every anim tag so none is ever spoken.
+    /// </summary>
+    internal static (string? Animation, string Text) ParseAnimation(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer)) return (null, string.Empty);
+
+        var first = AnimationTagPattern.Match(answer);
+        var animation = first.Success ? first.Groups[1].Value.Trim().ToLowerInvariant() : null;
+        return (animation, AnimationTagPattern.Replace(answer, string.Empty).Trim());
+    }
 
     /// <summary>Splits a leading [happy]/[neutral]/[sad] tag off the answer and removes any stray tags.</summary>
     internal static (string? Mood, string Text) ParseMood(string answer)

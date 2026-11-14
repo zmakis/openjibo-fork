@@ -299,6 +299,19 @@ public sealed class ChatGptSearchProviderTests
         Assert.Equal(text, parsedText);
     }
 
+    [Theory]
+    [InlineData("Pizza is great! [anim:pizza]", "pizza", "Pizza is great!")]
+    [InlineData("[anim: Coin-Flip ] Heads!", "coin-flip", "Heads!")]
+    [InlineData("Hi [anim:greeting] there [anim:heart]", "greeting", "Hi there")]
+    [InlineData("No animation here.", null, "No animation here.")]
+    public void ParseAnimation_TakesFirstTagAndStripsAll(string input, string? animation, string text)
+    {
+        var (parsedAnimation, parsedText) = ChatGptSearchProvider.ParseAnimation(input);
+
+        Assert.Equal(animation, parsedAnimation);
+        Assert.Equal(text, parsedText);
+    }
+
     [Fact]
     public void ExtractClaudeReply_ReadsJiboCommandToolCall()
     {

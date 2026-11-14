@@ -182,10 +182,11 @@ public sealed partial class JiboInteractionService
         return result.Outcome switch
         {
             KnowledgeSearchOutcome.Found when !string.IsNullOrWhiteSpace(result.AnswerText) =>
-                WithMood(
+                WithExpression(
                     ChitchatStateMachine.BuildKnowledgeSearchResponseDecision(
                         KnowledgeSearchSpokenReplyFormatter.FormatReply(result.AnswerText, result.BackendKind)),
-                    result.Mood),
+                    result.Mood,
+                    result.Animation),
             KnowledgeSearchOutcome.Unavailable =>
                 ChitchatStateMachine.BuildKnowledgeSearchUnavailableDecision(),
             _ => ChitchatStateMachine.BuildKnowledgeSearchNotFoundDecision(transcript)
@@ -218,18 +219,27 @@ public sealed partial class JiboInteractionService
             });
 
     // Speak the answer with Jibo's embodied-speech mood (body language) when the AI chose
-    // happy or sad; neutral keeps the default rendering.
-    internal static JiboInteractionDecision WithMood(JiboInteractionDecision decision, string? mood)
+    // happy or sad, and play a catalog animation (emoji picture, Jiboji or gesture) while
+    // speaking. Neutral with no valid animation keeps the default rendering.
+    internal static JiboInteractionDecision WithExpression(
+        JiboInteractionDecision decision,
+        string? mood,
+        string? animation)
     {
+        if (string.IsNullOrWhiteSpace(decision.ReplyText))
+            return decision;
+
         var category = mood?.Trim().ToLowerInvariant();
-        if (category is not ("happy" or "sad") || string.IsNullOrWhiteSpace(decision.ReplyText))
+        var hasMood = category is "happy" or "sad";
+        var hasAnimation = JiboAnimationCatalog.TryBuildAnimTag(animation, out var animTag);
+        if (!hasMood && !hasAnimation)
             return decision;
 
         var payload = decision.SkillPayload is null
             ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, object?>(decision.SkillPayload, StringComparer.OrdinalIgnoreCase);
         payload["esml"] =
-            $"<speak><es cat='{category}' filter='!ssa-only, !sfx-only' endNeutral='true'>{EscapeForEsml(decision.ReplyText)}</es></speak>";
+            $"<speak>{(hasAnimation ? animTag : string.Empty)}<es cat='{(hasMood ? category : "neutral")}' filter='!ssa-only, !sfx-only' endNeutral='true'>{EscapeForEsml(decision.ReplyText)}</es></speak>";
         return decision with { SkillPayload = payload };
     }
 

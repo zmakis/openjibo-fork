@@ -2226,6 +2226,92 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Fact]
+    public async Task BuildDecisionAsync_AiAnswerWithEmojiAnimation_PlaysItWhileSpeaking()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            "Pizza is my favourite too!",
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            Mood: "happy",
+            Animation: "pizza"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "do you like pizza",
+            NormalizedTranscript = "do you like pizza"
+        });
+
+        var esml = decision.SkillPayload!["esml"]?.ToString();
+        Assert.Contains("<anim cat='emoji' filter='pizza' nonBlocking='true' />", esml, StringComparison.Ordinal);
+        Assert.Contains("cat='happy'", esml, StringComparison.Ordinal);
+        Assert.Contains("Pizza is my favourite too!", esml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_AiAnswerWithGestureAndNeutralMood_UsesNeutralSpeech()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            "That is a funny joke.",
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            Mood: "neutral",
+            Animation: "laughing"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "why is that joke funny",
+            NormalizedTranscript = "why is that joke funny"
+        });
+
+        var esml = decision.SkillPayload!["esml"]?.ToString();
+        Assert.Contains("<anim cat='laughing' filter='!audio-only, !ssa-only' nonBlocking='true' />", esml, StringComparison.Ordinal);
+        Assert.Contains("<es cat='neutral'", esml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_AiAnswerWithUnknownAnimation_IgnoresIt()
+    {
+        var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
+            "Paris is the capital of France.",
+            SearchBackendKind.ChatGPT,
+            KnowledgeSearchOutcome.Found,
+            Mood: "neutral",
+            Animation: "eiffel-tower-dance"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "what is the capital of france",
+            NormalizedTranscript = "what is the capital of france"
+        });
+
+        Assert.False(decision.SkillPayload!.ContainsKey("esml"));
+    }
+
+    [Theory]
+    [InlineData("coin-flip", "<anim cat='jiboji' filter='coin-flip' nonBlocking='true' />")]
+    [InlineData("Heart", "<anim cat='emoji' filter='heart' nonBlocking='true' />")]
+    [InlineData("yes", "<anim cat='yes' filter='!audio-only, !ssa-only' nonBlocking='true' />")]
+    public void JiboAnimationCatalog_BuildsTagsForKnownNames(string name, string expected)
+    {
+        Assert.True(JiboAnimationCatalog.TryBuildAnimTag(name, out var tag));
+        Assert.Equal(expected, tag);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("pizza' onload='x")]
+    [InlineData("dragon")]
+    public void JiboAnimationCatalog_RejectsUnknownNames(string? name)
+    {
+        Assert.False(JiboAnimationCatalog.TryBuildAnimTag(name, out var tag));
+        Assert.Equal(string.Empty, tag);
+    }
+
+    [Fact]
     public async Task BuildDecisionAsync_ShortGreekPhrase_WithKnowledgeSearchConfigured_AsksTheAi()
     {
         var search = new StubKnowledgeSearchService(
