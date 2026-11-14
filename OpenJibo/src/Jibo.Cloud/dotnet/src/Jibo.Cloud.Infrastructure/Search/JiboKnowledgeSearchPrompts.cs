@@ -16,6 +16,8 @@ internal static class JiboKnowledgeSearchPrompts
 
             The request comes from speech-to-text and may contain mistakes. If it does not quite make sense, answer the most likely intended question.
 
+            The user may speak Greek or another language. Always answer in English, because your voice can only speak English.
+
             Use the earlier messages in this conversation to understand follow-ups such as "how old is he?" or "what about tomorrow?".
 
             You may ask one short follow-up question when it genuinely helps, because the user can answer you.
