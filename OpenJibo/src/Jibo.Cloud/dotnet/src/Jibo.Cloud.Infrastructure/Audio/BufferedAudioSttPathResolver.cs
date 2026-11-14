@@ -657,12 +657,6 @@ public static class BufferedAudioSttPathResolver
             ?.Trim();
     }
 
-    private static bool IsTruthy(string? value) =>
-        value is not null &&
-        (value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-         value.Equals("1", StringComparison.Ordinal) ||
-         value.Equals("yes", StringComparison.OrdinalIgnoreCase));
-
     private static string? ResolveOptionalString(
         string? configured,
         IReadOnlyList<string> environmentVariableNames,
