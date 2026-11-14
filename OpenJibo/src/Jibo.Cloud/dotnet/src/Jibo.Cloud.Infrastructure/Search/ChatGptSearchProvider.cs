@@ -34,6 +34,12 @@ public sealed class ChatGptSearchProvider(
 
     public SearchBackendKind Kind => SearchBackendKind.ChatGPT;
 
+    /// <summary>
+    /// Forces the OpenAI-compatible chat-completions path even for a Claude endpoint
+    /// (no skills tool, mood or web search). Used by tests so a local .env can't change the path.
+    /// </summary>
+    internal bool UseChatCompletionsOnly { get; init; }
+
     public async Task<KnowledgeSearchResult?> SearchAsync(
         KnowledgeSearchRequest request,
         CancellationToken cancellationToken = default)
@@ -54,7 +60,7 @@ public sealed class ChatGptSearchProvider(
 
         // Claude-first brain (Claude only): one native Messages API call that can answer with
         // a mood, ask Jibo to run a built-in skill (jibo_command tool), or search the web.
-        var isClaude = !attachVision && IsAnthropicEndpoint(endpoint);
+        var isClaude = !UseChatCompletionsOnly && !attachVision && IsAnthropicEndpoint(endpoint);
         var useBrain = isClaude && IsClaudeBrainEnabled();
 
         // Live web search: only for current-events questions (one search fee per question).

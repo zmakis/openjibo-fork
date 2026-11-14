@@ -360,10 +360,15 @@ public sealed class ChatGptSearchProviderTests
             ? $"ChatGPT!{apiKey}"
             : $"ChatGPT!{apiKey}!{model}";
 
+        // These tests fake the OpenAI chat-completions format; keep that path even when the
+        // machine's .env points the endpoint at Claude.
         return new ChatGptSearchProvider(
             new HttpClient(handler),
             SearchBackendOptions.Create(primary, null, 300, 45, llmInstructions),
-            NullLogger<ChatGptSearchProvider>.Instance);
+            NullLogger<ChatGptSearchProvider>.Instance)
+        {
+            UseChatCompletionsOnly = true
+        };
     }
 
     private static HttpResponseMessage JsonResponse(string body)
