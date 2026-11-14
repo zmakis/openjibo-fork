@@ -1,7 +1,9 @@
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Jibo.Cloud.Application.Abstractions;
@@ -50,14 +52,38 @@ public sealed class ChatGptSearchProvider(
         var attachVision = ShouldAttachVisionPhoto(query);
         var history = GetActiveHistory();
 
+        // Live web search (Claude only): used for current-events questions so answers are
+        // up to date. Costs one search fee per question, so it is not used for everything.
+        var useWebSearch = !attachVision &&
+                           IsAnthropicEndpoint(endpoint) &&
+                           IsWebSearchEnabled() &&
+                           NeedsWebSearch(query);
+
         // A cached answer is only safe when it cannot depend on a photo, on earlier turns,
-        // or on the current time/date.
-        var useCache = !attachVision && history.Count == 0 && !IsTimeSensitive(query);
+        // on live web results, or on the current time/date.
+        var useCache = !useWebSearch && !attachVision && history.Count == 0 && !IsTimeSensitive(query);
         if (useCache && TryGetCachedValue(cacheKey, out var cachedResult))
         {
             if (cachedResult?.Outcome == KnowledgeSearchOutcome.Found)
                 RememberTurn(query, cachedResult.AnswerText);
             return cachedResult;
+        }
+
+        if (useWebSearch)
+        {
+            var webResult = await TryWebSearchAsync(
+                request.BackendSpec.Credential,
+                model,
+                query,
+                history,
+                cancellationToken);
+            if (webResult is not null)
+            {
+                RememberTurn(query, webResult.AnswerText);
+                return webResult;
+            }
+
+            // Web search failed or was refused: fall through to a normal answer.
         }
 
         var result = await TryCompleteAsync(
@@ -167,6 +193,190 @@ public sealed class ChatGptSearchProvider(
             return false;
         var q = query.ToLowerInvariant();
         return VisionTriggerPhrases.Any(t => q.Contains(t));
+    }
+
+    private const string AnthropicMessagesEndpoint = "https://api.anthropic.com/v1/messages";
+    private const string AnthropicApiVersion = "2023-06-01";
+    private const string WebSearchToolType = "web_search_20250305";
+
+    private const string WebSearchInstructions =
+        "You can search the web. Use it for anything current or recent, then answer in one to three " +
+        "short spoken sentences. Never read out website names, links or citations.";
+
+    private async Task<KnowledgeSearchResult?> TryWebSearchAsync(
+        string apiKey,
+        string model,
+        string query,
+        IReadOnlyList<ConversationTurn> history,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var (systemMessage, _) = JiboKnowledgeSearchPrompts.BuildChatGptMessages(
+                query,
+                options.LlmInstructions);
+            systemMessage += "\n\n" + WebSearchInstructions;
+
+            var body = BuildWebSearchRequestBody(
+                model,
+                systemMessage,
+                history.Select(turn => (turn.User, turn.Assistant)).ToList(),
+                query,
+                ResolveWebSearchMaxUses(),
+                ResolveWebSearchUserLocation());
+
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, AnthropicMessagesEndpoint);
+            httpRequest.Headers.Add("x-api-key", apiKey);
+            httpRequest.Headers.Add("anthropic-version", AnthropicApiVersion);
+            httpRequest.Content = new StringContent(body, Encoding.UTF8, "application/json");
+
+            using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning(
+                    "Claude web search failed with status {StatusCode}: {Body}",
+                    response.StatusCode,
+                    responseBody.Length > 300 ? responseBody[..300] : responseBody);
+                return null;
+            }
+
+            var (answer, searches) = ExtractWebSearchAnswer(responseBody);
+            var spoken = KnowledgeSearchResponseFormatter.NormalizeForSpeech(answer);
+            if (string.IsNullOrWhiteSpace(spoken))
+                return null;
+
+            logger.LogInformation("Answered with Claude web search (searches={Searches}).", searches);
+            return new KnowledgeSearchResult(spoken, SearchBackendKind.ChatGPT);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Claude web search failed; falling back to a normal answer.");
+            return null;
+        }
+    }
+
+    internal static string BuildWebSearchRequestBody(
+        string model,
+        string systemMessage,
+        IReadOnlyList<(string User, string Assistant)> history,
+        string query,
+        int maxUses,
+        JsonObject? userLocation)
+    {
+        var messages = new JsonArray();
+        foreach (var (user, assistant) in history)
+        {
+            messages.Add(new JsonObject { ["role"] = "user", ["content"] = user });
+            messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = assistant });
+        }
+
+        messages.Add(new JsonObject { ["role"] = "user", ["content"] = query });
+
+        var tool = new JsonObject
+        {
+            ["type"] = WebSearchToolType,
+            ["name"] = "web_search",
+            ["max_uses"] = maxUses
+        };
+        if (userLocation is not null)
+            tool["user_location"] = userLocation;
+
+        var body = new JsonObject
+        {
+            ["model"] = model,
+            ["max_tokens"] = 400,
+            ["system"] = systemMessage,
+            ["messages"] = messages,
+            ["tools"] = new JsonArray { tool }
+        };
+        return body.ToJsonString();
+    }
+
+    /// <summary>
+    /// Returns the spoken answer from a Messages API response that may contain web search blocks.
+    /// Claude often writes a short "let me check" line before searching, so only the text after
+    /// the last search result is used (or all text when no search happened).
+    /// </summary>
+    internal static (string Answer, int Searches) ExtractWebSearchAnswer(string responseJson)
+    {
+        using var document = JsonDocument.Parse(responseJson);
+        var root = document.RootElement;
+
+        var searches = 0;
+        if (root.TryGetProperty("usage", out var usage) &&
+            usage.TryGetProperty("server_tool_use", out var serverToolUse) &&
+            serverToolUse.TryGetProperty("web_search_requests", out var requests) &&
+            requests.ValueKind == JsonValueKind.Number)
+            searches = requests.GetInt32();
+
+        if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+            return (string.Empty, searches);
+
+        var blocks = content.EnumerateArray().ToList();
+        var lastSearchResult = blocks.FindLastIndex(block =>
+            block.TryGetProperty("type", out var type) && type.GetString() == "web_search_tool_result");
+
+        var answer = new StringBuilder();
+        for (var i = lastSearchResult + 1; i < blocks.Count; i++)
+        {
+            var block = blocks[i];
+            if (block.TryGetProperty("type", out var type) && type.GetString() == "text" &&
+                block.TryGetProperty("text", out var text))
+                answer.Append(text.GetString());
+        }
+
+        return (answer.ToString().Trim(), searches);
+    }
+
+    private static readonly Regex WebSearchPattern = new(
+        @"\b(today|tonight|yesterday|this (week|weekend|month|year)|latest|recent|recently|news|headlines|current|currently|right now|score|scores|won|winner|game|match|playoffs?|election|stocks?|price of|weather|forecast|released?|coming out|upcoming)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    /// <summary>Questions about current events that need live results.</summary>
+    internal static bool NeedsWebSearch(string query) =>
+        !string.IsNullOrWhiteSpace(query) && WebSearchPattern.IsMatch(query);
+
+    internal static bool IsAnthropicEndpoint(string endpoint) =>
+        Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) &&
+        uri.Host.Equals("api.anthropic.com", StringComparison.OrdinalIgnoreCase);
+
+    // OPENJIBO_WEB_SEARCH=false turns live web search off.
+    private static bool IsWebSearchEnabled() =>
+        !string.Equals(
+            Environment.GetEnvironmentVariable("OPENJIBO_WEB_SEARCH")?.Trim(),
+            "false",
+            StringComparison.OrdinalIgnoreCase);
+
+    // OPENJIBO_WEB_SEARCH_MAX_USES caps searches per question (1-5, default 2) to control cost.
+    private static int ResolveWebSearchMaxUses()
+    {
+        var raw = Environment.GetEnvironmentVariable("OPENJIBO_WEB_SEARCH_MAX_USES");
+        return int.TryParse(raw, out var value) ? Math.Clamp(value, 1, 5) : 2;
+    }
+
+    // Optional approximate location for local results (weather, local news):
+    // OPENJIBO_WEB_SEARCH_CITY / _REGION / _COUNTRY (2-letter) / _TIMEZONE (IANA).
+    private static JsonObject? ResolveWebSearchUserLocation()
+    {
+        var fields = new (string Key, string Env)[]
+        {
+            ("city", "OPENJIBO_WEB_SEARCH_CITY"),
+            ("region", "OPENJIBO_WEB_SEARCH_REGION"),
+            ("country", "OPENJIBO_WEB_SEARCH_COUNTRY"),
+            ("timezone", "OPENJIBO_WEB_SEARCH_TIMEZONE")
+        };
+
+        JsonObject? location = null;
+        foreach (var (key, env) in fields)
+        {
+            var value = Environment.GetEnvironmentVariable(env)?.Trim();
+            if (string.IsNullOrEmpty(value)) continue;
+            location ??= new JsonObject { ["type"] = "approximate" };
+            location[key] = value;
+        }
+
+        return location;
     }
 
     private static List<ChatCompletionRequestMessage> BuildMessages(

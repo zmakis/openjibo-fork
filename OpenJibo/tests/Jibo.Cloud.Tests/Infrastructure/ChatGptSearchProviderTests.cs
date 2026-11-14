@@ -189,6 +189,98 @@ public sealed class ChatGptSearchProviderTests
         Assert.False(ChatGptSearchProvider.IsTimeSensitive("who wrote Hamlet"));
     }
 
+    [Theory]
+    [InlineData("What's in the news today", true)]
+    [InlineData("Who won the Leafs game last night", true)]
+    [InlineData("What's the weather this weekend", true)]
+    [InlineData("When is the new iPhone coming out", true)]
+    [InlineData("What is fifteen plus fifteen", false)]
+    [InlineData("Who wrote Hamlet", false)]
+    [InlineData("How old is he", false)]
+    public void NeedsWebSearch_OnlyForCurrentEvents(string query, bool expected)
+    {
+        Assert.Equal(expected, ChatGptSearchProvider.NeedsWebSearch(query));
+    }
+
+    [Theory]
+    [InlineData("https://api.anthropic.com/v1/chat/completions", true)]
+    [InlineData("https://API.ANTHROPIC.COM/v1/chat/completions", true)]
+    [InlineData("https://api.openai.com/v1/chat/completions", false)]
+    [InlineData("not a url", false)]
+    public void IsAnthropicEndpoint_DetectsClaude(string endpoint, bool expected)
+    {
+        Assert.Equal(expected, ChatGptSearchProvider.IsAnthropicEndpoint(endpoint));
+    }
+
+    [Fact]
+    public void BuildWebSearchRequestBody_IncludesToolHistoryAndLocation()
+    {
+        var location = new System.Text.Json.Nodes.JsonObject { ["type"] = "approximate", ["city"] = "Toronto" };
+        var body = ChatGptSearchProvider.BuildWebSearchRequestBody(
+            "claude-haiku-5-5",
+            "system text",
+            [("Who is the president", "Donald Trump.")],
+            "Any news about him today",
+            2,
+            location);
+
+        using var json = JsonDocument.Parse(body);
+        var root = json.RootElement;
+        Assert.Equal("claude-haiku-5-5", root.GetProperty("model").GetString());
+        Assert.Equal("system text", root.GetProperty("system").GetString());
+        var messages = root.GetProperty("messages");
+        Assert.Equal(3, messages.GetArrayLength());
+        Assert.Equal("assistant", messages[1].GetProperty("role").GetString());
+        Assert.Equal("Any news about him today", messages[2].GetProperty("content").GetString());
+        var tool = root.GetProperty("tools")[0];
+        Assert.Equal("web_search_20250305", tool.GetProperty("type").GetString());
+        Assert.Equal("web_search", tool.GetProperty("name").GetString());
+        Assert.Equal(2, tool.GetProperty("max_uses").GetInt32());
+        Assert.Equal("Toronto", tool.GetProperty("user_location").GetProperty("city").GetString());
+    }
+
+    [Fact]
+    public void BuildWebSearchRequestBody_OmitsLocationWhenNotConfigured()
+    {
+        var body = ChatGptSearchProvider.BuildWebSearchRequestBody("m", "s", [], "q today", 1, null);
+
+        using var json = JsonDocument.Parse(body);
+        Assert.False(json.RootElement.GetProperty("tools")[0].TryGetProperty("user_location", out _));
+    }
+
+    [Fact]
+    public void ExtractWebSearchAnswer_UsesOnlyTextAfterLastSearchResult()
+    {
+        const string response = """
+            {
+              "content": [
+                { "type": "text", "text": "Let me check the latest score." },
+                { "type": "server_tool_use", "id": "srvtoolu_1", "name": "web_search", "input": { "query": "Leafs score" } },
+                { "type": "web_search_tool_result", "tool_use_id": "srvtoolu_1", "content": [] },
+                { "type": "text", "text": "The Leafs won ", "citations": [ { "type": "web_search_result_location" } ] },
+                { "type": "text", "text": "four to two last night." }
+              ],
+              "usage": { "input_tokens": 9000, "output_tokens": 40, "server_tool_use": { "web_search_requests": 1 } }
+            }
+            """;
+
+        var (answer, searches) = ChatGptSearchProvider.ExtractWebSearchAnswer(response);
+
+        Assert.Equal("The Leafs won four to two last night.", answer);
+        Assert.Equal(1, searches);
+    }
+
+    [Fact]
+    public void ExtractWebSearchAnswer_UsesAllTextWhenNoSearchHappened()
+    {
+        const string response = """{"content":[{"type":"text","text":"Thirty."}],"usage":{"input_tokens":10,"output_tokens":2}}""";
+
+        var (answer, searches) = ChatGptSearchProvider.ExtractWebSearchAnswer(response);
+
+        Assert.Equal("Thirty.", answer);
+        Assert.Equal(0, searches);
+    }
+
     private static ChatGptSearchProvider CreateProvider(
         HttpMessageHandler handler,
         string? apiKey = "test-api-key",
