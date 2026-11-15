@@ -2252,7 +2252,7 @@ public sealed class JiboInteractionServiceTests
     public async Task BuildDecisionAsync_AiAnswerWithGestureAndNeutralMood_UsesNeutralSpeech()
     {
         var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
-            "That is a funny joke.",
+            "Surprises and silly faces make people laugh.",
             SearchBackendKind.ChatGPT,
             KnowledgeSearchOutcome.Found,
             Mood: "neutral",
@@ -2261,8 +2261,8 @@ public sealed class JiboInteractionServiceTests
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
-            RawTranscript = "why is that joke funny",
-            NormalizedTranscript = "why is that joke funny"
+            RawTranscript = "what makes people laugh",
+            NormalizedTranscript = "what makes people laugh"
         });
 
         var esml = decision.SkillPayload!["esml"]?.ToString();
