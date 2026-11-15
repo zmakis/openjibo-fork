@@ -220,7 +220,10 @@ public sealed class ChatGptSearchProvider(
         "in any language the user speaks. " +
         "Answer everything else yourself: general questions, conversation, facts about the world, and " +
         "questions about you, Jibo, such as what you like, your favourites, your feelings and opinions. " +
-        "Questions about the time in another city or country are general questions: answer them yourself.";
+        "Questions about the time in another city or country are general questions: answer them yourself. " +
+        "Requests like flipping a coin, picking a number or saying happy birthday: answer them yourself " +
+        "(with a fitting animation). If the words make no sense, they were probably misheard: say briefly " +
+        "that you didn't catch that and ask the user to say it again.";
 
     private static readonly string AnimationInstructions =
         "Jibo can show an animation on its screen while it speaks. When one clearly fits, add exactly one " +

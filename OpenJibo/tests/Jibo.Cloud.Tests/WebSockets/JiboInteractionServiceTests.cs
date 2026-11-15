@@ -2338,6 +2338,23 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Fact]
+    public async Task BuildDecisionAsync_ShortRequest_WithKnowledgeSearchConfigured_AsksTheAi()
+    {
+        var search = new StubKnowledgeSearchService(
+            new KnowledgeSearchResult("Heads!", SearchBackendKind.ChatGPT, Animation: "coin-flip"));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "flip a coin",
+            NormalizedTranscript = "flip a coin"
+        });
+
+        Assert.NotEqual("not_understood", decision.IntentName);
+        Assert.Equal(1, search.SearchCount);
+    }
+
+    [Fact]
     public async Task BuildDecisionAsync_LongNonQuestion_WithKnowledgeSearchConfigured_AsksTheAi()
     {
         var search = new StubKnowledgeSearchService(
@@ -2363,8 +2380,8 @@ public sealed class JiboInteractionServiceTests
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
-            RawTranscript = "Gling lang gone",
-            NormalizedTranscript = "Gling lang gone"
+            RawTranscript = "gling",
+            NormalizedTranscript = "gling"
         });
 
         Assert.Equal("not_understood", decision.IntentName);

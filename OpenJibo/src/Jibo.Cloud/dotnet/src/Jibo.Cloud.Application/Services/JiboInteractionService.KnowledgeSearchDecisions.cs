@@ -23,13 +23,13 @@ public sealed partial class JiboInteractionService
         var isQuestion = TranscriptHeuristics.IsLikelyQuestion(transcript);
         if (!isQuestion)
         {
-            // Fallback: send unrecognised sentences with real content (4+ words) to the AI
-            // instead of answering "I don't understand". Short fragments are usually
-            // speech-to-text noise ("Gling lang gone") and still get "I don't understand".
-            // Non-Latin text (e.g. Greek) can never match the English commands, so a short
-            // phrase like "με ακούς" ("can you hear me") goes to the AI from 2 words.
+            // Fallback: send unrecognised sentences of 2+ words to the AI instead of answering
+            // "I don't understand", so short requests like "flip a coin" or "happy birthday"
+            // (or Greek "με ακούς") get a real answer. The AI is told to say it didn't catch
+            // that when the words are speech-to-text noise. Single words still get
+            // "I don't understand".
             var wordCount = transcript.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
-            var minimumWords = ContainsNonLatinLetters(transcript) ? 2 : 4;
+            const int minimumWords = 2;
             if (wordCount < minimumWords || knowledgeSearchService?.IsConfigured != true)
                 return ChitchatStateMachine.BuildNotUnderstoodDecision(transcript);
 
