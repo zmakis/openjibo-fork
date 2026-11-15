@@ -2243,7 +2243,7 @@ public sealed class JiboInteractionServiceTests
         });
 
         var esml = decision.SkillPayload!["esml"]?.ToString();
-        Assert.Contains("<anim cat='emoji' filter='pizza' nonBlocking='true' />", esml, StringComparison.Ordinal);
+        Assert.Contains("<anim cat='emoji' filter='pizza, !hf' /><es cat='happy'", esml, StringComparison.Ordinal);
         Assert.Contains("cat='happy'", esml, StringComparison.Ordinal);
         Assert.Contains("Pizza is my favourite too!", esml, StringComparison.Ordinal);
     }
@@ -2292,7 +2292,7 @@ public sealed class JiboInteractionServiceTests
 
     [Theory]
     [InlineData("coin-flip", "<anim cat='jiboji' filter='coin-flip' nonBlocking='true' />")]
-    [InlineData("Heart", "<anim cat='emoji' filter='heart' nonBlocking='true' />")]
+    [InlineData("Heart", "<anim cat='emoji' filter='heart, !hf' />")]
     [InlineData("yes", "<anim cat='yes' filter='!audio-only, !ssa-only' nonBlocking='true' />")]
     public void JiboAnimationCatalog_BuildsTagsForKnownNames(string name, string expected)
     {

@@ -51,8 +51,11 @@ public static class JiboAnimationCatalog
         "gestures: " + string.Join(", ", Gestures) + ".";
 
     /// <summary>
-    /// Turns a catalog name into a non-blocking ESML anim tag (plays while Jibo speaks).
-    /// Unknown names return false so a made-up name can never reach the robot.
+    /// Turns a catalog name into an ESML anim tag. Jibojis and gestures are non-blocking
+    /// (they play while Jibo speaks). Emoji pictures are eye-only, so speaking would
+    /// immediately replace them; they play first (blocking, about two seconds) and skip the
+    /// quick "hf" blink-to-reveal variants. Unknown names return false so a made-up name can
+    /// never reach the robot.
     /// </summary>
     public static bool TryBuildAnimTag(string? name, out string esmlTag)
     {
@@ -63,7 +66,7 @@ public static class JiboAnimationCatalog
         if (JibojiSet.Contains(key))
             esmlTag = $"<anim cat='jiboji' filter='{key}' nonBlocking='true' />";
         else if (EmojiSet.Contains(key))
-            esmlTag = $"<anim cat='emoji' filter='{key}' nonBlocking='true' />";
+            esmlTag = $"<anim cat='emoji' filter='{key}, !hf' />";
         else if (GestureSet.Contains(key))
             esmlTag = $"<anim cat='{key}' filter='!audio-only, !ssa-only' nonBlocking='true' />";
         else
