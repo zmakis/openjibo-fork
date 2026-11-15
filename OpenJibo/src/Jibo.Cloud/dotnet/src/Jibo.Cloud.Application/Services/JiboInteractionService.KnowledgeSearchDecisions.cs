@@ -231,15 +231,27 @@ public sealed partial class JiboInteractionService
 
         var category = mood?.Trim().ToLowerInvariant();
         var hasMood = category is "happy" or "sad";
-        var hasAnimation = JiboAnimationCatalog.TryBuildAnimTag(animation, out var animTag);
-        if (!hasMood && !hasAnimation)
-            return decision;
+        var text = EscapeForEsml(decision.ReplyText);
+        string esml;
+        if (JiboAnimationCatalog.TryBuildEmojiWrapOpenTag(animation, out var emojiOpen))
+        {
+            // Emoji pictures are eye-only: wrap the words so the picture stays on screen while
+            // Jibo talks (Jibo's own scripts do this), and hold it briefly after the last word.
+            esml = $"<speak>{emojiOpen}{text}<break size='1.5'/></anim></speak>";
+        }
+        else
+        {
+            var hasAnimation = JiboAnimationCatalog.TryBuildAnimTag(animation, out var animTag);
+            if (!hasMood && !hasAnimation)
+                return decision;
+            esml =
+                $"<speak>{(hasAnimation ? animTag : string.Empty)}<es cat='{(hasMood ? category : "neutral")}' filter='!ssa-only, !sfx-only' endNeutral='true'>{text}</es></speak>";
+        }
 
         var payload = decision.SkillPayload is null
             ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, object?>(decision.SkillPayload, StringComparer.OrdinalIgnoreCase);
-        payload["esml"] =
-            $"<speak>{(hasAnimation ? animTag : string.Empty)}<es cat='{(hasMood ? category : "neutral")}' filter='!ssa-only, !sfx-only' endNeutral='true'>{EscapeForEsml(decision.ReplyText)}</es></speak>";
+        payload["esml"] = esml;
         return decision with { SkillPayload = payload };
     }
 

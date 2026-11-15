@@ -50,12 +50,28 @@ public static class JiboAnimationCatalog
         "pictures: " + string.Join(", ", Emojis) + ". " +
         "gestures: " + string.Join(", ", Gestures) + ".";
 
+    /// <summary>True when the name is one of the eye-only emoji pictures.</summary>
+    public static bool IsEmoji(string? name) =>
+        !string.IsNullOrWhiteSpace(name) && EmojiSet.Contains(name.Trim());
+
     /// <summary>
-    /// Turns a catalog name into an ESML anim tag. Jibojis and gestures are non-blocking
-    /// (they play while Jibo speaks). Emoji pictures are eye-only, so speaking would
-    /// immediately replace them; they play first (blocking, about two seconds) and skip the
-    /// quick "hf" blink-to-reveal variants. Unknown names return false so a made-up name can
-    /// never reach the robot.
+    /// Opening tag for an emoji picture that wraps the spoken words, as Jibo's own scripted
+    /// responses do (e.g. &lt;anim cat='emoji' filter='dog, !hf' layers='!audio'&gt;Woof woof&lt;/anim&gt;).
+    /// Emoji are eye-only, so an embodied-speech block around the words would replace the picture;
+    /// wrapping keeps it on screen while Jibo talks. Skips the quick "hf" blink variants.
+    /// </summary>
+    public static bool TryBuildEmojiWrapOpenTag(string? name, out string openTag)
+    {
+        openTag = string.Empty;
+        if (!IsEmoji(name)) return false;
+        openTag = $"<anim cat='emoji' filter='{name!.Trim().ToLowerInvariant()}, !hf' layers='!audio'>";
+        return true;
+    }
+
+    /// <summary>
+    /// Turns a catalog name into a non-blocking ESML anim tag (plays while Jibo speaks).
+    /// Emoji pictures return the blocking form; prefer <see cref="TryBuildEmojiWrapOpenTag"/> for them.
+    /// Unknown names return false so a made-up name can never reach the robot.
     /// </summary>
     public static bool TryBuildAnimTag(string? name, out string esmlTag)
     {
@@ -66,7 +82,7 @@ public static class JiboAnimationCatalog
         if (JibojiSet.Contains(key))
             esmlTag = $"<anim cat='jiboji' filter='{key}' nonBlocking='true' />";
         else if (EmojiSet.Contains(key))
-            esmlTag = $"<anim cat='emoji' filter='{key}, !hf' />";
+            esmlTag = $"<anim cat='emoji' filter='{key}, !hf' layers='!audio' />";
         else if (GestureSet.Contains(key))
             esmlTag = $"<anim cat='{key}' filter='!audio-only, !ssa-only' nonBlocking='true' />";
         else
