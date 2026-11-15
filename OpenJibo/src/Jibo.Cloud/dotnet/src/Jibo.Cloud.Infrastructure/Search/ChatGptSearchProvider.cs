@@ -215,9 +215,11 @@ public sealed class ChatGptSearchProvider(
     private const string BrainInstructions =
         "Start every spoken answer with exactly one mood tag, [happy], [neutral] or [sad], matching how " +
         "Jibo should sound, for example: [happy] Here is a fun one for you. " +
-        "If the user wants Jibo to do something it has a built-in skill for, or asks about Jibo itself, " +
-        "call the jibo_command tool instead of answering, in any language the user speaks. " +
-        "Answer general questions, conversation and facts about the world yourself. " +
+        "Only when the user asks Jibo to DO something it has a built-in skill for (set a timer, dance, " +
+        "check the weather, play the radio and so on), call the jibo_command tool instead of answering, " +
+        "in any language the user speaks. " +
+        "Answer everything else yourself: general questions, conversation, facts about the world, and " +
+        "questions about you, Jibo, such as what you like, your favourites, your feelings and opinions. " +
         "Questions about the time in another city or country are general questions: answer them yourself.";
 
     private static readonly string AnimationInstructions =
@@ -234,9 +236,9 @@ public sealed class ChatGptSearchProvider(
         "check), the local time and date, weather, news, calendar, commute, volume (up, down, or a number), " +
         "stop, go to sleep, wake up, dance, turn around, take a picture, show the photo gallery, play the " +
         "radio (optionally a genre), roll dice, spell a word, define a word, word of the day, fun fact, tell " +
-        "a joke, tell a story, surprise me, shopping and to-do lists, smart-home lights and thermostat, and " +
-        "questions about Jibo itself (its name, age, favourites, feelings, where it was born). Do not use it " +
-        "for general questions, conversation or facts about the world.";
+        "a joke, tell a story, surprise me, shopping and to-do lists, smart-home lights and thermostat. " +
+        "Never use it for questions, conversation, facts about the world, questions about Jibo's likes, " +
+        "favourites or feelings, or to show an animation (use an [anim:NAME] tag for that).";
 
     private async Task<KnowledgeSearchResult?> TryClaudeMessagesAsync(
         string apiKey,
