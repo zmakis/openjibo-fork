@@ -102,6 +102,15 @@ public sealed partial class JiboInteractionService
         if (householdListDecision is not null) return householdListDecision;
 
         var preferredName = ResolvePreferredGreetingName(turn, greetingPresence);
+
+        // "What do you see?" matches the stock "can you see" reply ("I can see faces and
+        // movement"). With an AI configured, send it to the AI instead, which describes the
+        // photo Jibo just took (or says to take one first). "Can you see?" keeps the stock reply.
+        if (string.Equals(semanticIntent, "robot_can_see", StringComparison.OrdinalIgnoreCase) &&
+            knowledgeSearchService?.IsConfigured == true &&
+            IsDescribeWhatYouSeeRequest(lowered))
+            semanticIntent = "chat";
+
         if (string.Equals(semanticIntent, "chat", StringComparison.OrdinalIgnoreCase))
         {
             if (isSkillOwnedListen)
