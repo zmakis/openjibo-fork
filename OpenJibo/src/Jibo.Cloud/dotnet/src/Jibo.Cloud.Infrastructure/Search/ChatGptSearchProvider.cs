@@ -56,7 +56,7 @@ public sealed class ChatGptSearchProvider(
         var query = request.Query.Trim();
         var cacheKey = BuildCacheKey(request.BackendSpec, model, query);
         var visionPhoto = IsVisionQuestion(query)
-            ? FindFreshVisionPhoto(VisionPhotoRoots(), DateTime.UtcNow, VisionPhotoMaxAge)
+            ? await WaitForFreshVisionPhotoAsync(cancellationToken)
             : null;
         var attachVision = visionPhoto is not null;
         var history = GetActiveHistory();
@@ -204,8 +204,32 @@ public sealed class ChatGptSearchProvider(
         "how do i look", "what color is", "who is this", "read this", "in the photo", "in the picture"
     ];
 
-    // A photo counts as "what Jibo sees right now" for a few minutes after it was taken.
-    private static readonly TimeSpan VisionPhotoMaxAge = TimeSpan.FromMinutes(3);
+    // A photo counts as "what Jibo sees right now" for a few minutes after it was taken
+    // (OPENJIBO_VISION_PHOTO_MAX_AGE_SECONDS, default 300).
+    private static TimeSpan VisionPhotoMaxAge =>
+        TimeSpan.FromSeconds(ReadPositiveIntSetting("OPENJIBO_VISION_PHOTO_MAX_AGE_SECONDS", 300));
+
+    // When asked "what do you see" right after "take a picture", the photo may still be on its
+    // way from the robot: wait for it a little (OPENJIBO_VISION_PHOTO_WAIT_SECONDS, default 10).
+    private static TimeSpan VisionPhotoWait =>
+        TimeSpan.FromSeconds(ReadPositiveIntSetting("OPENJIBO_VISION_PHOTO_WAIT_SECONDS", 10, allowZero: true));
+
+    private async Task<string?> WaitForFreshVisionPhotoAsync(CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + VisionPhotoWait;
+        while (true)
+        {
+            var photo = FindFreshVisionPhoto(VisionPhotoRoots(), DateTime.UtcNow, VisionPhotoMaxAge);
+            if (photo is not null || DateTime.UtcNow >= deadline) return photo;
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+        }
+    }
+
+    private static int ReadPositiveIntSetting(string name, int fallback, bool allowZero = false) =>
+        int.TryParse(Environment.GetEnvironmentVariable(name), out var value) &&
+        (value > 0 || (allowZero && value == 0))
+            ? value
+            : fallback;
 
     internal static bool IsVisionQuestion(string query) =>
         !string.IsNullOrWhiteSpace(query) &&
