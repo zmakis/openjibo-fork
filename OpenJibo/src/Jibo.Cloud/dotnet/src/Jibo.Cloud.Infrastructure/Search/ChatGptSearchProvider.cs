@@ -236,7 +236,7 @@ public sealed class ChatGptSearchProvider(
     private const string JiboCommandToolDescription =
         "Run one of Jibo's built-in skills. Use it when the user wants Jibo to do something it has a skill " +
         "for, or asks about Jibo itself, in any language or wording. Skills: timers and alarms (set, cancel, " +
-        "check), the local time and date, weather, news, calendar, commute, volume (up, down, or a number), " +
+        "check), the local time and date, weather at home (answer weather in other places yourself), news, calendar, commute, volume (up, down, or a number), " +
         "stop, go to sleep, wake up, dance, turn around, take a picture, show the photo gallery, play the " +
         "radio (optionally a genre), roll dice, spell a word, define a word, word of the day, fun fact, tell " +
         "a joke, tell a story, surprise me, shopping and to-do lists, smart-home lights and thermostat. " +
