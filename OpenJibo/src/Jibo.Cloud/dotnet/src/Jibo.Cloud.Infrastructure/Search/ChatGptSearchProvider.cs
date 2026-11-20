@@ -55,7 +55,10 @@ public sealed class ChatGptSearchProvider(
         var model = SearchBackendSettingsResolver.ResolveModel(request.BackendSpec);
         var query = request.Query.Trim();
         var cacheKey = BuildCacheKey(request.BackendSpec, model, query);
-        var attachVision = ShouldAttachVisionPhoto(query);
+        var visionPhoto = IsVisionQuestion(query)
+            ? FindFreshVisionPhoto(VisionPhotoRoots(), DateTime.UtcNow, VisionPhotoMaxAge)
+            : null;
+        var attachVision = visionPhoto is not null;
         var history = GetActiveHistory();
 
         // Claude-first brain (Claude only): one native Messages API call that can answer with
@@ -101,7 +104,7 @@ public sealed class ChatGptSearchProvider(
             request.BackendSpec.Credential,
             model,
             query,
-            attachVision,
+            visionPhoto,
             history,
             cancellationToken);
 
@@ -125,7 +128,7 @@ public sealed class ChatGptSearchProvider(
         string apiKey,
         string model,
         string prompt,
-        bool attachVision,
+        string? visionPhotoPath,
         IReadOnlyList<ConversationTurn> history,
         CancellationToken cancellationToken)
     {
@@ -136,19 +139,27 @@ public sealed class ChatGptSearchProvider(
                 options.LlmInstructions);
 
             object userContent = userMessage;
-            const string visionPhotoPath = "/data/vision-latest.jpg";
-            if (attachVision && System.IO.File.Exists(visionPhotoPath))
+            if (visionPhotoPath is not null && System.IO.File.Exists(visionPhotoPath))
             {
                 try
                 {
                     var imageBytes = await System.IO.File.ReadAllBytesAsync(visionPhotoPath, cancellationToken);
                     var imageBase64 = Convert.ToBase64String(imageBytes);
+                    var mediaType = DetectImageMediaType(imageBytes) ?? "image/jpeg";
                     userContent = new object[]
                     {
-                        new { type = "text", text = userMessage },
-                        new { type = "image_url", image_url = new { url = $"data:image/jpeg;base64,{imageBase64}" } }
+                        new
+                        {
+                            type = "text",
+                            text = userMessage + "\n\n(The attached photo was just taken with your own camera. " +
+                                   "Describe what you see as Jibo, in one to three short spoken sentences.)"
+                        },
+                        new { type = "image_url", image_url = new { url = $"data:{mediaType};base64,{imageBase64}" } }
                     };
-                    logger.LogInformation("Attached vision photo to ChatGPT/Claude request ({Bytes} bytes).", imageBytes.Length);
+                    logger.LogInformation(
+                        "Attached vision photo {Path} to ChatGPT/Claude request ({Bytes} bytes).",
+                        visionPhotoPath,
+                        imageBytes.Length);
                 }
                 catch (Exception imageEx)
                 {
@@ -187,21 +198,82 @@ public sealed class ChatGptSearchProvider(
 
     private static readonly string[] VisionTriggerPhrases =
     [
-        "what do you see", "what can you see", "do you see", "look at", "looking at",
-        "what am i wearing", "am i wearing", "what is this", "what's this",
-        "what am i holding", "describe me", "how do i look", "what color is",
-        "who is this", "read this"
+        "what do you see", "what can you see", "do you see", "can you see", "look at", "looking at",
+        "what am i wearing", "am i wearing", "what is this", "what's this", "in front of you",
+        "what am i holding", "describe me", "describe the photo", "describe the picture",
+        "how do i look", "what color is", "who is this", "read this", "in the photo", "in the picture"
     ];
 
-    private static bool ShouldAttachVisionPhoto(string query)
+    // A photo counts as "what Jibo sees right now" for a few minutes after it was taken.
+    private static readonly TimeSpan VisionPhotoMaxAge = TimeSpan.FromMinutes(3);
+
+    internal static bool IsVisionQuestion(string query) =>
+        !string.IsNullOrWhiteSpace(query) &&
+        VisionTriggerPhrases.Any(t => query.Contains(t, StringComparison.OrdinalIgnoreCase));
+
+    // Where fresh photos can be found: the hand-copied file, and the media store where the
+    // robot uploads every picture it takes ("Hey Jibo, take a picture").
+    private static IEnumerable<string> VisionPhotoRoots()
     {
-        const string path = "/data/vision-latest.jpg";
-        if (string.IsNullOrWhiteSpace(query) || !System.IO.File.Exists(path))
-            return false;
-        if (DateTime.UtcNow - System.IO.File.GetLastWriteTimeUtc(path) > TimeSpan.FromMinutes(2))
-            return false;
-        var q = query.ToLowerInvariant();
-        return VisionTriggerPhrases.Any(t => q.Contains(t));
+        yield return Environment.GetEnvironmentVariable("OPENJIBO_VISION_PHOTO_PATH") is { Length: > 0 } custom
+            ? custom
+            : "/data/vision-latest.jpg";
+        yield return Environment.GetEnvironmentVariable("OpenJibo__Media__DirectoryPath") is { Length: > 0 } media
+            ? media
+            : "/data/media";
+    }
+
+    /// <summary>
+    /// Newest JPEG/PNG among the given files and folders (searched recursively) that is no older
+    /// than <paramref name="maxAge"/>; files are checked by content, since the media store saves
+    /// uploads as .bin. Returns null when there is no fresh photo.
+    /// </summary>
+    internal static string? FindFreshVisionPhoto(IEnumerable<string> roots, DateTime utcNow, TimeSpan maxAge)
+    {
+        var candidates = new List<System.IO.FileInfo>();
+        foreach (var root in roots)
+        {
+            try
+            {
+                if (System.IO.File.Exists(root))
+                    candidates.Add(new System.IO.FileInfo(root));
+                else if (System.IO.Directory.Exists(root))
+                    candidates.AddRange(new System.IO.DirectoryInfo(root)
+                        .EnumerateFiles("*", System.IO.SearchOption.AllDirectories)
+                        .Where(f => !f.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase)));
+            }
+            catch (Exception)
+            {
+                // Unreadable folder: skip it.
+            }
+        }
+
+        foreach (var file in candidates
+                     .Where(f => utcNow - f.LastWriteTimeUtc <= maxAge && f.Length is > 1024 and < 20_000_000)
+                     .OrderByDescending(f => f.LastWriteTimeUtc))
+        {
+            try
+            {
+                var header = new byte[8];
+                using var stream = file.OpenRead();
+                if (stream.Read(header, 0, header.Length) == header.Length && DetectImageMediaType(header) is not null)
+                    return file.FullName;
+            }
+            catch (System.IO.IOException)
+            {
+                // File still being written or gone: try the next one.
+            }
+        }
+
+        return null;
+    }
+
+    internal static string? DetectImageMediaType(byte[] bytes)
+    {
+        if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return "image/jpeg";
+        if (bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+            return "image/png";
+        return null;
     }
 
     private const string AnthropicMessagesEndpoint = "https://api.anthropic.com/v1/messages";
@@ -222,7 +294,9 @@ public sealed class ChatGptSearchProvider(
         "questions about you, Jibo, such as what you like, your favourites, your feelings and opinions. " +
         "Questions about the time in another city or country are general questions: answer them yourself. " +
         "Requests like flipping a coin, picking a number or saying happy birthday: answer them yourself " +
-        "(with a fitting animation). If the words make no sense, they were probably misheard: say briefly " +
+        "(with a fitting animation). When asked what you see or how something looks and no photo is " +
+        "attached, you cannot see right now: say to tell you \"take a picture\" first and then ask again. " +
+        "If the words make no sense, they were probably misheard: say briefly " +
         "that you didn't catch that and ask the user to say it again.";
 
     private static readonly string AnimationInstructions =

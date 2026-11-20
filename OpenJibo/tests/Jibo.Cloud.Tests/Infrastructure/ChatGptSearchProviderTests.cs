@@ -299,6 +299,57 @@ public sealed class ChatGptSearchProviderTests
         Assert.Equal(text, parsedText);
     }
 
+    [Fact]
+    public void FindFreshVisionPhoto_PicksNewestRecentImageFromMediaFolder()
+    {
+        var root = Directory.CreateTempSubdirectory("openjibo-vision-").FullName;
+        try
+        {
+            var now = DateTime.UtcNow;
+            var jpeg = new byte[2052];
+            jpeg[0] = 0xFF; jpeg[1] = 0xD8; jpeg[2] = 0xFF; jpeg[3] = 0xE0;
+            var old = Path.Combine(root, "a", "old.bin");
+            var fresh = Path.Combine(root, "b", "fresh.bin");
+            var notImage = Path.Combine(root, "b", "log.bin");
+            Directory.CreateDirectory(Path.GetDirectoryName(old)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(fresh)!);
+            File.WriteAllBytes(old, jpeg);
+            File.SetLastWriteTimeUtc(old, now.AddMinutes(-10));
+            File.WriteAllBytes(fresh, jpeg);
+            File.SetLastWriteTimeUtc(fresh, now.AddSeconds(-30));
+            File.WriteAllBytes(notImage, new byte[4096]);
+            File.SetLastWriteTimeUtc(notImage, now.AddSeconds(-5));
+
+            Assert.Equal(fresh, ChatGptSearchProvider.FindFreshVisionPhoto([root], now, TimeSpan.FromMinutes(3)));
+            Assert.Null(ChatGptSearchProvider.FindFreshVisionPhoto([old], now, TimeSpan.FromMinutes(3)));
+            Assert.Null(ChatGptSearchProvider.FindFreshVisionPhoto(
+                [Path.Combine(root, "missing")], now, TimeSpan.FromMinutes(3)));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Theory]
+    [InlineData("hey jibo what do you see", true)]
+    [InlineData("what's in front of you", true)]
+    [InlineData("what's the weather", false)]
+    public void IsVisionQuestion_DetectsCameraQuestions(string query, bool expected)
+    {
+        Assert.Equal(expected, ChatGptSearchProvider.IsVisionQuestion(query));
+    }
+
+    [Fact]
+    public void DetectImageMediaType_RecognisesJpegAndPng()
+    {
+        Assert.Equal("image/jpeg", ChatGptSearchProvider.DetectImageMediaType([0xFF, 0xD8, 0xFF, 0xDB]));
+        Assert.Equal(
+            "image/png",
+            ChatGptSearchProvider.DetectImageMediaType([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]));
+        Assert.Null(ChatGptSearchProvider.DetectImageMediaType([0x00, 0x01, 0x02]));
+    }
+
     [Theory]
     [InlineData("Pizza is great! [anim:pizza]", "pizza", "Pizza is great!")]
     [InlineData("[anim: Coin-Flip ] Heads!", "coin-flip", "Heads!")]
