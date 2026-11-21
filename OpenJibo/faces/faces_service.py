@@ -27,8 +27,9 @@ DATA_PATH = os.environ.get("FACES_DATA", "/data/faces.json")
 DETECT_MODEL = os.environ.get("FACES_DETECT_MODEL", "/models/face_detection_yunet.onnx")
 RECOGNIZE_MODEL = os.environ.get("FACES_RECOGNIZE_MODEL", "/models/face_recognition_sface.onnx")
 PORT = int(os.environ.get("FACES_PORT", "8487"))
-# SFace cosine similarity: same person usually above ~0.36. Raise to be stricter.
-MATCH_THRESHOLD = float(os.environ.get("FACES_MATCH_THRESHOLD", "0.40"))
+# SFace cosine similarity: same person usually above ~0.36 (OpenCV's suggested value).
+# Raise to be stricter (fewer wrong names), lower if people are not recognised.
+MATCH_THRESHOLD = float(os.environ.get("FACES_MATCH_THRESHOLD", "0.36"))
 MAX_SAMPLES_PER_PERSON = 20
 MAX_BODY_BYTES = 15 * 1024 * 1024
 
@@ -184,12 +185,15 @@ class Handler(BaseHTTPRequestHandler):
         _save_last(image, path)
         image, faces = detect_faces(image)
         if path == "/identify":
-            names = []
+            names, scores = [], []
             for face in faces[:6]:
-                name, _ = best_match(embed(image, face))
+                name, score = best_match(embed(image, face))
+                scores.append(round(score, 2))
                 if name and name not in names:
                     names.append(name)
-            return self._send(200, {"faces": len(faces), "names": names})
+            print(f"identify: {len(faces)} face(s), best scores {scores}, threshold {MATCH_THRESHOLD}, "
+                  f"recognised {names or 'nobody'}", flush=True)
+            return self._send(200, {"faces": len(faces), "names": names, "scores": scores})
 
         if path == "/enroll":
             name = clean_name(query.get("name"))

@@ -113,6 +113,7 @@ services:
     environment:
       FACES_DATA: /data/faces.json
       JIBO_CAMERA_URL: ${OPENJIBO_JIBO_CAMERA_URL:-}
+      FACES_MATCH_THRESHOLD: ${OPENJIBO_FACES_MATCH_THRESHOLD:-0.36}
     volumes:
       - faces-data:/data
     restart: unless-stopped
