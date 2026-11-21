@@ -24,7 +24,8 @@ public sealed class WikipediaInteractionServiceTests
 
         Assert.Equal("knowledge_search", decision.IntentName);
         Assert.Equal(query, search.LastQuery);
-        Assert.StartsWith("According to chat gee pee tee.", decision.ReplyText, StringComparison.Ordinal);
+        // This fork answers directly, without the "According to ..." source prefix.
+        Assert.Equal("Here is the answer.", decision.ReplyText);
     }
 
     [Fact]
@@ -39,7 +40,8 @@ public sealed class WikipediaInteractionServiceTests
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
-        Assert.StartsWith("According to wikipedia dot org.", decision.ReplyText, StringComparison.Ordinal);
+        // This fork answers directly, without the "According to ..." source prefix.
+        Assert.StartsWith("The Kansas City Chiefs are", decision.ReplyText, StringComparison.Ordinal);
     }
 
     [Fact]
