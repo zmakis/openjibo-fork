@@ -46,7 +46,15 @@ public sealed partial class JiboInteractionService
             if (RequiresLinkedUser(turn))
                 return BuildAccountRequiredDecision();
 
-            return ShouldHandleProactiveGreetingTrigger(turn, triggerSource, greetingPresence)
+            if (string.Equals(triggerSource, "SURPRISE", StringComparison.OrdinalIgnoreCase))
+                return turn.Attributes.TryGetValue("isProactiveSocket", out var proactiveSocket) &&
+                       proactiveSocket is true &&
+                       greetingPresence.PrimaryPersonId is { } focusedPerson &&
+                       greetingPresence.LoopUserFirstNames.ContainsKey(focusedPerson)
+                    ? BuildRobotTriggeredSurpriseDecision(catalog)
+                    : BuildTriggerIgnoredDecision();
+
+            return ShouldHandleProactiveGreetingTrigger(turn, greetingPresence)
                 ? BuildProactiveGreetingDecision(turn, greetingPresence, referenceLocalTime)
                 : BuildTriggerIgnoredDecision();
         }
@@ -124,6 +132,11 @@ public sealed partial class JiboInteractionService
                 preferredName,
                 cancellationToken);
         }
+
+        if (PegasusQuipRoutes.GetMimId(semanticIntent) is { } quipMimId)
+            return BuildPerformanceDecision(catalog, semanticIntent,
+                semanticIntent == "robot_turn_off_eye" ? "I need my eye to see." : "I don't have that one ready right now.",
+                quipMimId, referenceLocalTime);
 
         var chitchatDecision = ChitchatStateMachine.TryBuildDecision(
             semanticIntent,
@@ -1444,6 +1457,10 @@ public sealed partial class JiboInteractionService
                 catalog,
                 "robot_best_friends",
                 "best friends with anyone in my Loop"),
+            "robot_tell_poem" => BuildPerformanceDecision(catalog, semanticIntent, "I don't have a poem ready right now."),
+            "robot_tell_dream" => BuildPerformanceDecision(catalog, semanticIntent, "I don't have a dream to share right now."),
+            "robot_rap" => BuildPerformanceDecision(catalog, semanticIntent, "I don't have a rap ready right now."),
+            "robot_sing" => BuildSongPerformanceDecision(),
             "robot_can_sing" => BuildScriptedSingDecision(
                 catalog,
                 "robot_can_sing",

@@ -13,6 +13,7 @@ public sealed class OpenWeatherReportProvider(
     : IWeatherReportProvider
 {
     private const int MaxForecastDayOffset = 5;
+    private static readonly Dictionary<string, string> CountryCodes = BuildCountryCodes();
 
     private readonly ConcurrentDictionary<string, CacheEntry<LocationPoint?>> _geocodeCache =
         new(StringComparer.OrdinalIgnoreCase);
@@ -89,42 +90,66 @@ public sealed class OpenWeatherReportProvider(
 
         if (string.IsNullOrWhiteSpace(query)) return null;
 
-        // Spoken places come as "Athens Greece"; OpenWeather's geocoder wants "Athens,Greece"
-        // and finds nothing for the plain form, which used to end in "weather service offline".
-        foreach (var candidate in BuildGeocodeCandidates(query))
-        {
-            var point = await GeocodeAsync(candidate, cancellationToken);
-            if (point is not null) return point;
-        }
-
-        logger.LogInformation("OpenWeather could not find the place {Location}.", query);
-        return null;
+        var (geocodeQuery, expectedCountry) = NormalizeGeocodeQuery(query);
+        return await GeocodeAsync(geocodeQuery, expectedCountry, cancellationToken);
     }
 
     /// <summary>
-    /// Ways to ask the geocoder for a spoken place name: as said, then "City,Country"
-    /// (split before the last one or two words), then the city words alone.
+    /// Convert a recognized country qualifier to the ISO code expected by OpenWeather.
     /// </summary>
-    internal static IReadOnlyList<string> BuildGeocodeCandidates(string query)
+    internal static (string Query, string? ExpectedCountry) NormalizeGeocodeQuery(string query)
     {
         var trimmed = query.Trim();
-        var candidates = new List<string> { trimmed };
-        if (trimmed.Contains(',')) return candidates;
+        var comma = trimmed.LastIndexOf(',');
+        if (comma >= 0)
+            return TryResolveCountryQualifier(trimmed[(comma + 1)..].Trim(), out var countryCode)
+                ? (trimmed[..(comma + 1)] + countryCode, countryCode)
+                : (trimmed, null);
 
         var words = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length >= 2)
-            candidates.Add(string.Join(' ', words[..^1]) + "," + words[^1]);
-        if (words.Length >= 3)
-            candidates.Add(string.Join(' ', words[..^2]) + "," + string.Join(' ', words[^2..]));
-        if (words.Length >= 2)
-            candidates.Add(string.Join(' ', words[..^1]));
+        for (var split = 1; split < words.Length; split++)
+        {
+            var qualifier = string.Join(' ', words[split..]);
+            // Without a comma, Georgia can mean the country or the US state.
+            if (!qualifier.Equals("Georgia", StringComparison.OrdinalIgnoreCase) &&
+                TryResolveCountryQualifier(qualifier, out var code))
+                return (string.Join(' ', words[..split]) + "," + code, code);
+        }
 
-        return candidates.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return (trimmed, null);
     }
 
-    private async Task<LocationPoint?> GeocodeAsync(string query, CancellationToken cancellationToken)
+    private static bool TryResolveCountryQualifier(string qualifier, out string? code)
+    {
+        // Most two-letter strings are also used as state or province codes.
+        code = null;
+        return (qualifier.Length > 2 || qualifier.Equals("US", StringComparison.OrdinalIgnoreCase) ||
+                qualifier.Equals("UK", StringComparison.OrdinalIgnoreCase) ||
+                qualifier.Equals("GB", StringComparison.OrdinalIgnoreCase)) &&
+               CountryCodes.TryGetValue(qualifier, out code);
+    }
+
+    private static Dictionary<string, string> BuildCountryCodes()
+    {
+        var codes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var culture in CultureInfo.GetCultures(CultureTypes.SpecificCultures))
+        {
+            var region = new RegionInfo(culture.Name);
+            var code = region.TwoLetterISORegionName;
+            if (code.Length != 2) continue;
+            codes.TryAdd(code, code);
+            codes.TryAdd(region.EnglishName, code);
+        }
+
+        codes["UK"] = "GB";
+        return codes;
+    }
+
+    private async Task<LocationPoint?> GeocodeAsync(string query, string? expectedCountry,
+        CancellationToken cancellationToken)
     {
         var geocodeCacheKey = NormalizeLocationQueryForCache(query);
+        if (expectedCountry is not null) geocodeCacheKey += "|" + expectedCountry;
         if (TryGetCachedValue(_geocodeCache, geocodeCacheKey, out var cachedLocation)) return cachedLocation;
 
         var geocodeUri = BuildRequestUri(
@@ -149,6 +174,14 @@ public sealed class OpenWeatherReportProvider(
         }
 
         var location = document.RootElement[0];
+        if (expectedCountry is not null &&
+            (!location.TryGetProperty("country", out var country) || country.ValueKind != JsonValueKind.String ||
+             !string.Equals(country.GetString(), expectedCountry, StringComparison.OrdinalIgnoreCase)))
+        {
+            SetCachedValue(_geocodeCache, geocodeCacheKey, null, options.FailureCacheTtlSeconds);
+            return null;
+        }
+
         if (!TryReadDouble(location, "lat", out var latitude) ||
             !TryReadDouble(location, "lon", out var longitude))
         {

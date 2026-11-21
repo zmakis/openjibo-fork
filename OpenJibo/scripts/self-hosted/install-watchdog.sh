@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs the OpenJibo watchdog (run once, as root): every 5 minutes and 2 minutes after boot.
 set -eu
-SCRIPT="$(cd "$(dirname "$0")" && pwd)/openjibo-watchdog.sh"
+SCRIPT="$(cd "$(dirname "$0")" && pwd)/home-server-watchdog.sh"
 chmod +x "$SCRIPT"
 cat > /etc/cron.d/openjibo-watchdog <<CRON
 SHELL=/bin/bash

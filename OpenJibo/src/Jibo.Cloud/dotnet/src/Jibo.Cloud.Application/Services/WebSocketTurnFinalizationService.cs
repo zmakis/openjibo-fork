@@ -153,6 +153,22 @@ public sealed class WebSocketTurnFinalizationService(
 
     private static readonly HashSet<string> SingleTokenUsableTranscripts = new(StringComparer.Ordinal)
     {
+        "rap",
+        "sing",
+        "beatbox",
+        "wink",
+        "meow",
+        "bark",
+        "wave",
+        "bobsled",
+        "laugh",
+        "whistle",
+        "burp",
+        "dab",
+        "blink",
+        "bow",
+        "ski",
+        "snowboard",
         "joke",
         "funny",
         "dance",
@@ -688,6 +704,9 @@ public sealed class WebSocketTurnFinalizationService(
                     DelayMs = map.DelayMs
                 })
                 .ToArray();
+            turn.Attributes.TryGetValue("triggerSource", out var triggerSource);
+            logger.LogDebug("Proactive replies emitted trigger={TriggerSource} intent={Intent} replyCount={ReplyCount}",
+                triggerSource, plan.IntentName, replies.Length);
             ResetBufferedAudio(session);
             ClearListenTracking(turnState);
             return replies;
@@ -3597,7 +3616,9 @@ public sealed class WebSocketTurnFinalizationService(
 
     private static bool LooksLikeCloudVersionSelfAudioOnly(string normalized)
     {
-        return normalized.StartsWith("cloud version 1 ", StringComparison.Ordinal) ||
+        return normalized.StartsWith("my cloud version is 1 ", StringComparison.Ordinal) ||
+               normalized.StartsWith("my cloud version is one ", StringComparison.Ordinal) ||
+               normalized.StartsWith("cloud version 1 ", StringComparison.Ordinal) ||
                normalized.StartsWith("cloud version one ", StringComparison.Ordinal) ||
                normalized.StartsWith("version 1 ", StringComparison.Ordinal) ||
                normalized.StartsWith("version one ", StringComparison.Ordinal) ||

@@ -51,7 +51,15 @@ public static class LegacyMimPromptNormalizer
         @"<[^>]+>",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
-    public static Result Normalize(string? prompt, bool preservePlaceholders, bool preserveTtsMarkup = false)
+    private static readonly Regex MarkupOrTextPattern = new(
+        @"<[^>]+>|[^<]+",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    internal static string FormatTextOutsideMarkup(string markup, Func<string, string> format) =>
+        MarkupOrTextPattern.Replace(markup, match => match.Value[0] == '<' ? match.Value : format(match.Value));
+
+    public static Result Normalize(string? prompt, bool preservePlaceholders, bool preserveTtsMarkup = false,
+        bool preserveAnimation = false, bool preservePitch = false)
     {
         if (string.IsNullOrWhiteSpace(prompt)) return new Result();
 
@@ -61,18 +69,20 @@ public static class LegacyMimPromptNormalizer
         foreach (Match match in SsaEmotionPattern.Matches(text))
             emotion = match.Groups["cat"].Value.Trim();
 
-        text = PitchBlockPattern.Replace(text, match => $" {match.Groups[1].Value} ");
+        if (!preserveTtsMarkup || !preservePitch)
+            text = PitchBlockPattern.Replace(text, match => $" {match.Groups[1].Value} ");
         text = StyleBlockPattern.Replace(text, match => $" {match.Groups[1].Value} ");
-        text = AnimBlockPattern.Replace(text, match => $" {match.Groups[1].Value} ");
-        text = AnimSelfClosingPattern.Replace(text, " ");
+        if (!preserveTtsMarkup || !preserveAnimation)
+        {
+            text = AnimSelfClosingPattern.Replace(text, " ");
+            text = AnimBlockPattern.Replace(text, match => $" {match.Groups[1].Value} ");
+        }
         text = SsaStripPattern.Replace(text, " ");
 
         if (!preservePlaceholders) text = PlaceholderPattern.Replace(text, " ");
         if (!preserveTtsMarkup) text = ResidualMarkupPattern.Replace(text, " ");
 
-        text = WhitespacePattern.Replace(text, " ").Trim();
-        text = SpaceBeforePunctuationPattern.Replace(text, "$1");
-        text = WhitespacePattern.Replace(text, " ").Trim();
+        text = (preserveTtsMarkup ? FormatTextOutsideMarkup(text, NormalizeSpacing) : NormalizeSpacing(text)).Trim();
         text = text.TrimStart('.', ',', ';', ':', '!', '?', ' ');
 
         return new Result
@@ -81,4 +91,7 @@ public static class LegacyMimPromptNormalizer
             Emotion = string.IsNullOrWhiteSpace(emotion) ? null : emotion
         };
     }
+
+    private static string NormalizeSpacing(string text) =>
+        SpaceBeforePunctuationPattern.Replace(WhitespacePattern.Replace(text, " "), "$1");
 }

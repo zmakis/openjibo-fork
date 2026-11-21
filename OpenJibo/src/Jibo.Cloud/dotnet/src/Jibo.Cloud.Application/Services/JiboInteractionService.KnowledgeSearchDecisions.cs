@@ -20,7 +20,8 @@ public sealed partial class JiboInteractionService
             preferredName);
         if (emotionDecision is not null) return emotionDecision;
 
-        var isQuestion = TranscriptHeuristics.IsLikelyQuestion(transcript);
+        var isQuestion = TranscriptHeuristics.IsLikelyQuestion(transcript) ||
+                         TranscriptHeuristics.IsLikelyQuestion(NormalizeCommandPhrase(transcript));
         if (!isQuestion)
         {
             // Fallback: send unrecognised sentences of 2+ words to the AI instead of answering

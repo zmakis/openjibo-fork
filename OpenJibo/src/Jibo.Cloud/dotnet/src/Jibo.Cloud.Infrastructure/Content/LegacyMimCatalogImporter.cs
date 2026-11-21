@@ -62,15 +62,19 @@ public static class LegacyMimCatalogImporter
             foreach (var prompt in definition.Prompts)
             {
                 var preservePlaceholders = IsSpeakerTemplateBucket(bucket.Value);
-                var preserveTtsMarkup = PreservesTtsMarkup(bucket.Value);
+                var mimId = prompt.MimId ?? definition.MimId ?? Path.GetFileNameWithoutExtension(filePath);
+                var isPerformance = mimId is "RA_JBO_TellPoem" or "RA_JBO_TellDream" or "RA_JBO_Rap" or "RA_JBO_Sing";
+                var preserveIndexedMarkup = isPerformance || PegasusQuipRoutes.PreservesSpeechMarkup(mimId);
+                var preserveTtsMarkup = PreservesTtsMarkup(bucket.Value) || preserveIndexedMarkup;
                 var normalizedPrompt = LegacyMimPromptNormalizer.Normalize(
                     prompt.Prompt,
                     preservePlaceholders,
-                    preserveTtsMarkup);
+                    preserveTtsMarkup,
+                    preserveAnimation: PegasusQuipRoutes.PreservesAnimation(mimId),
+                    preservePitch: PegasusQuipRoutes.PreservesPitch(mimId));
                 if (string.IsNullOrWhiteSpace(normalizedPrompt.Text)) continue;
 
                 var condition = NormalizeImportedCondition(prompt.Condition, filePath, bucket.Value);
-                var mimId = prompt.MimId ?? definition.MimId ?? Path.GetFileNameWithoutExtension(filePath);
                 var emotion = normalizedPrompt.Emotion;
 
                 builder.RegisterMimPrompt(
@@ -81,10 +85,15 @@ public static class LegacyMimCatalogImporter
                     prompt.PromptId,
                     emotion);
 
+                // String-only buckets are also used by generic replies, so keep their text plain.
+                var bucketText = preserveIndexedMarkup
+                    ? LegacyMimPromptNormalizer.Normalize(prompt.Prompt, preservePlaceholders).Text
+                    : normalizedPrompt.Text;
+                if (string.IsNullOrWhiteSpace(bucketText)) continue;
                 builder.Add(
                     bucket.Value,
                     condition,
-                    normalizedPrompt.Text,
+                    bucketText,
                     prompt.Weight,
                     mimId,
                     prompt.PromptId,

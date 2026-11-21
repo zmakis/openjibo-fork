@@ -81,6 +81,11 @@ public sealed partial class JiboInteractionService
 
         if (IsVerifyMeRequest(loweredTranscript)) return "verify_me";
 
+        var spokenRequest = NormalizeCommandPhrase(loweredTranscript);
+        var quip = PegasusQuipRoutes.Resolve(
+            TranscriptTextNormalizer.StripTrailingCourtesyWords(spokenRequest), clientIntent, clientEntities);
+        if (quip is not null) return quip;
+
         if (HomeAssistantLightCommandParser.TryParse(loweredTranscript, out var lightCommand))
             return lightCommand.Action == HomeAssistantLightCommandParser.LightAction.On
                 ? "ha_lights_on"
@@ -371,7 +376,11 @@ public sealed partial class JiboInteractionService
                 "what joke do you like best"))
             return "robot_favorite_joke";
 
-        if (MatchesAny(
+        if (spokenRequest == "tell me a fact" ||
+            (string.Equals(clientIntent, "requestTellJiboContent", StringComparison.OrdinalIgnoreCase) &&
+             clientEntities.TryGetValue("JiboContent", out var factContent) &&
+             string.Equals(factContent, "FunFact", StringComparison.OrdinalIgnoreCase)) ||
+            MatchesAny(
                 loweredTranscript,
                 "fun fact",
                 "tell me a fun fact",
@@ -547,6 +556,8 @@ public sealed partial class JiboInteractionService
                 "do you like sleep",
                 "do you like sleeping",
                 "do you enjoy sleep",
+                "do you love to take naps",
+                "do you enjoy being asleep",
                 "do you enjoy sleeping"))
             return "robot_likes_sleep";
 
@@ -627,14 +638,35 @@ public sealed partial class JiboInteractionService
                 "sing holiday song"))
             return "robot_sing_christmas_song";
 
+        if (string.Equals(clientIntent, "requestTellJiboContent", StringComparison.OrdinalIgnoreCase) &&
+            clientEntities.TryGetValue("JiboContent", out var jiboContent))
+        {
+            if (string.Equals(jiboContent, "Poem", StringComparison.OrdinalIgnoreCase)) return "robot_tell_poem";
+            if (string.Equals(jiboContent, "Dream", StringComparison.OrdinalIgnoreCase)) return "robot_tell_dream";
+        }
+
+        if (spokenRequest is "read a poem" or "tell me a poem" or "recite a poem" or
+            "can you tell me a poem" or "can you read a poem" or "can you recite a poem")
+            return "robot_tell_poem";
+
+        if (spokenRequest is "did you dream" or "did you have a dream" or "did you have dream" or
+            "tell me a dream" or "tell me about a dream" or "tell me about one of your dreams")
+            return "robot_tell_dream";
+
+        if (string.Equals(clientIntent, "requestRap", StringComparison.OrdinalIgnoreCase) ||
+            spokenRequest is "rap" or "rap for me" or "can you rap" or "be a rapper")
+            return "robot_rap";
+
+        if (string.Equals(clientIntent, "requestSingSong", StringComparison.OrdinalIgnoreCase) ||
+            spokenRequest is "sing" or "sing a song" or "sing me a song" or "can you sing a song" or
+                "could you sing me a song" or "will you sing me a song" or
+                "sing for me" or "sing for us" or "sing something")
+            return "robot_sing";
+
         if (MatchesAny(
                 loweredTranscript,
                 "can you sing",
                 "will you sing",
-                "sing a song",
-                "sing me a song",
-                "can you sing a song",
-                "sing something",
                 "would you sing"))
             return "robot_can_sing";
 
@@ -663,9 +695,7 @@ public sealed partial class JiboInteractionService
                 "can you watch television"))
             return "robot_can_watch_tv";
 
-        if (MatchesAny(
-                loweredTranscript,
-                "can you dream"))
+        if (spokenRequest is "can you dream" or "do you dream")
             return "robot_can_dream";
 
         if (MatchesAny(
@@ -1754,7 +1784,9 @@ public sealed partial class JiboInteractionService
                 "who developed you"))
             return "robot_origin_created";
 
-        if (MatchesAny(
+        if (string.Equals(clientIntent, "requestStory", StringComparison.OrdinalIgnoreCase) ||
+            spokenRequest is "do you know any stories" or "do you know a story" ||
+            MatchesAny(
                 loweredTranscript,
                 "tell me a story",
                 "can you tell me a story",
@@ -3330,7 +3362,11 @@ public sealed partial class JiboInteractionService
         if (TryResolvePegasusPersonalityGap(loweredTranscript, out var pegasusGapIntent))
             return pegasusGapIntent!;
 
-        return MatchesAny(loweredTranscript, "hello", "hi", "hey") ? "hello" : "chat";
+        var firstWord = TranscriptTextNormalizer.NormalizeLooseText(loweredTranscript).Split(' ', 2)[0];
+        return (firstWord is "hello" or "hi" or "hey") &&
+               !TranscriptHeuristics.IsLikelyQuestion(spokenRequest)
+            ? "hello"
+            : "chat";
     }
 
     private static bool TryResolvePegasusPersonalityGap(
@@ -3616,6 +3652,7 @@ public sealed partial class JiboInteractionService
                 loweredTranscript,
                 "how did you sleep",
                 "how was your sleep",
+                "how well did you sleep",
                 "did you sleep well"))
         {
             semanticIntent = "robot_how_was_sleep";

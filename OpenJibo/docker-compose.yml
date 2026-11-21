@@ -78,14 +78,14 @@ services:
       OpenJibo__ReleaseSmoke__Secret: ${OPENJIBO_RELEASE_SMOKE_SECRET:-}
       OpenJibo__ReleaseSmoke__MaxConcurrentDevices: ${OPENJIBO_RELEASE_SMOKE_MAX_CONCURRENT:-6}
       OpenJibo__SelfHosted__AllowTokenlessSingleRobotHub: ${OPENJIBO_ALLOW_TOKENLESS_SINGLE_ROBOT_HUB:-false}
-      # Home servers: keep protocol captures off so the disk does not fill up
-      # (OPENJIBO_CAPTURES=true to record them). Docker logs are capped by "logging" above;
-      # OPENJIBO_LOG_LEVEL=Information makes them quieter (Debug shows each transcript).
+      # Protocol captures and log level. Home servers can set OPENJIBO_CAPTURES=false so the
+      # recordings do not fill the disk, and OPENJIBO_LOG_LEVEL=Information for quieter logs.
+      # Docker logs are capped by "logging" below.
       OpenJibo__Logging__MinimumLevel: ${OPENJIBO_LOG_LEVEL:-Debug}
-      OpenJibo__Telemetry__Enabled: ${OPENJIBO_CAPTURES:-false}
-      OpenJibo__Telemetry__ExportFixtures: ${OPENJIBO_CAPTURES:-false}
-      OpenJibo__ProtocolTelemetry__Enabled: ${OPENJIBO_CAPTURES:-false}
-      OpenJibo__TurnTelemetry__Enabled: ${OPENJIBO_CAPTURES:-false}
+      OpenJibo__Telemetry__Enabled: ${OPENJIBO_CAPTURES:-true}
+      OpenJibo__Telemetry__ExportFixtures: ${OPENJIBO_CAPTURES:-true}
+      OpenJibo__ProtocolTelemetry__Enabled: ${OPENJIBO_CAPTURES:-true}
+      OpenJibo__TurnTelemetry__Enabled: ${OPENJIBO_CAPTURES:-true}
     restart: unless-stopped
     logging:
       driver: json-file

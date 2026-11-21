@@ -1198,6 +1198,200 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Theory]
+    [InlineData("Tell me a poem.", null, null, "robot_tell_poem", "RA_JBO_TellPoem")]
+    [InlineData("Did you have a dream?", null, null, "robot_tell_dream", "RA_JBO_TellDream")]
+    [InlineData("Please sing for us.", null, null, "robot_sing", "runtime-song")]
+    [InlineData("Rap.", null, null, "robot_rap", "RA_JBO_Rap")]
+    [InlineData("", "requestTellJiboContent", "Poem", "robot_tell_poem", "RA_JBO_TellPoem")]
+    [InlineData("", "requestTellJiboContent", "Dream", "robot_tell_dream", "RA_JBO_TellDream")]
+    [InlineData("", "requestSingSong", null, "robot_sing", "runtime-song")]
+    [InlineData("", "requestRap", null, "robot_rap", "RA_JBO_Rap")]
+    public async Task BuildDecisionAsync_PegasusPerformanceRequests_SelectTheirOwnMim(
+        string transcript, string? clientIntent, string? content, string intent, string mimId)
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = transcript,
+            Attributes = new Dictionary<string, object?>
+            {
+                ["clientIntent"] = clientIntent,
+                ["clientEntities"] = content is null ? null : new Dictionary<string, string> { ["JiboContent"] = content }
+            }
+        });
+
+        Assert.Equal(intent, decision.IntentName);
+        Assert.Equal(mimId, decision.SkillPayload?["mim_id"]);
+        Assert.False(string.IsNullOrWhiteSpace(decision.ReplyText));
+        Assert.DoesNotContain("<break", decision.ReplyText, StringComparison.Ordinal);
+        if (intent == "robot_tell_poem")
+        {
+            var esml = Assert.IsType<string>(decision.SkillPayload!["esml"]);
+            Assert.NotEmpty(System.Xml.Linq.XElement.Parse(esml).Descendants("break"));
+        }
+        if (intent == "robot_sing")
+        {
+            var esml = Assert.IsType<string>(decision.SkillPayload!["esml"]);
+            var root = System.Xml.Linq.XElement.Parse(esml);
+            Assert.Equal(6, root.Descendants("pitch").Count());
+            Assert.NotEmpty(root.Descendants("duration"));
+        }
+    }
+
+    [Theory]
+    [InlineData("Can you turn off your eyes?", "robot_turn_off_eye", "RA_JBO_TurnOffEye")]
+    [InlineData("Hey Jibo, turn off your eye please.", "robot_turn_off_eye", "RA_JBO_TurnOffEye")]
+    [InlineData("Tell me a fortune.", "robot_tell_fortune", "RA_JBO_TellFortune")]
+    [InlineData("Give me a riddle.", "robot_tell_riddle", "RA_JBO_TellRiddle")]
+    [InlineData("Tell me a haiku.", "robot_tell_haiku", "RA_JBO_TellHaiku")]
+    [InlineData("Give me a deep thought.", "robot_tell_deep_thought", "RA_JBO_TellDeepThought")]
+    [InlineData("Give me a palindrome.", "robot_tell_palindrome", "RA_JBO_TellPalindrome")]
+    [InlineData("Give me a weird word.", "robot_tell_weird_word", "RA_JBO_TellWeirdWord")]
+    [InlineData("Tell me your secrets.", "robot_tell_secrets", "RA_JBO_TellSecrets")]
+    [InlineData("Do you have any words of wisdom?", "robot_words_of_wisdom", "RA_JBO_TellWordsOfWisdom")]
+    [InlineData("Are you alive?", "robot_is_alive", "RI_JBO_IsAlive")]
+    [InlineData("Do you get lonely?", "robot_can_get_lonely", "RI_JBO_CanGetLonely")]
+    [InlineData("Can you beatbox?", "robot_beatbox", "RA_JBO_Beatbox")]
+    [InlineData("Beam me up, Scotty.", "robot_beam_me_up", "RA_JBO_BeamMeUp")]
+    [InlineData("Ask me a question.", "robot_ask_question", "RA_JBO_AskQuestion")]
+    [InlineData("Can you do an impression of Tom Hanks?", "robot_do_impression", "RA_JBO_DoImpression")]
+    [InlineData("Do something cool.", "robot_show_off", "RA_JBO_ShowOff")]
+    [InlineData("Would you please count up to ten?", "robot_count_to_ten", "RA_JBO_CountTo10")]
+    [InlineData("Tell me something.", "robot_tell_something", "RA_JBO_TellSomething")]
+    [InlineData("Give me a fact about robots.", "robot_tell_robot_fact", "RA_JBO_TellRobotFact")]
+    [InlineData("Tell me a fact about humans.", "robot_tell_human_fact", "RA_JBO_TellHumanFact")]
+    [InlineData("Tell me a sci-fi quote.", "robot_tell_scifi_quote", "RA_JBO_TellScifiQuote")]
+    [InlineData("Give me five.", "robot_give_high_five", "RA_JBO_GiveHighfive")]
+    [InlineData("Wave.", "robot_wave", "RA_JBO_ShowWaveEmoji")]
+    [InlineData("What does the fox say?", "robot_make_fox_sound", "RA_JBO_MakeSoundFox")]
+    [InlineData("Tell me a New Year's joke.", "robot_tell_new_year_joke", "RA_JBO_TellANewYearsJoke")]
+    [InlineData("Tell me about yourself.", "robot_tell_about_yourself", "RA_JBO_TellAboutYourself")]
+    [InlineData("Blow a bubble.", "robot_blow_bubbles", "RA_JBO_BlowBubble")]
+    [InlineData("Show me your mustache.", "robot_show_mustache", "RA_JBO_ShowMustache")]
+    [InlineData("Show me your sunglasses.", "robot_show_sunglasses", "RA_JBO_ShowSunglassesEmoji")]
+    [InlineData("Can you do the robot?", "robot_do_the_robot", "RA_JBO_DoTheRobot")]
+    [InlineData("Let's have a staring contest.", "robot_staring_contest", "RA_JBO_StaringContest")]
+    [InlineData("Do you miss me?", "robot_misses_user", "RI_JBO_IsMissingUser")]
+    [InlineData("Do you think magic is real?", "robot_believes_in_magic", "RI_JBO_BelievesInMagic")]
+    [InlineData("Do you have a bobsled?", "robot_bobsled", "RA_JBO_Bobsled")]
+    [InlineData("Be a snowman.", "robot_be_snowman", "RA_JBO_BeSnowman")]
+    [InlineData("Bs snowman.", "robot_be_snowman", "RA_JBO_BeSnowman")]
+    [InlineData("Do you have any pranks?", "robot_do_prank", "RA_JBO_DoPrank")]
+    [InlineData("Whistle.", "robot_whistle", "RA_JBO_Whistle")]
+    [InlineData("Can you burp?", "robot_burp", "RA_JBO_Burp")]
+    [InlineData("Just hang out.", "robot_hang_out", "RA_JBO_HangOut")]
+    [InlineData("Wash your face.", "robot_wash_face", "RA_JBO_WashYourFace")]
+    [InlineData("Tell me about the future.", "robot_tell_about_future", "RA_JBO_TellAboutFuture")]
+    [InlineData("Show me an emoji.", "robot_show_emoji", "RA_JBO_ShowEmoji")]
+    [InlineData("Look up.", "robot_look_up", "RA_JBO_LookUp")]
+    [InlineData("Show me an April Fools prank.", "robot_april_fools_prank", "RA_JBO_DoAprilFoolsPrank")]
+    [InlineData("Show me an April Fool's prank.", "robot_april_fools_prank", "RA_JBO_DoAprilFoolsPrank")]
+    [InlineData("Show me an April Fool’s prank.", "robot_april_fools_prank", "RA_JBO_DoAprilFoolsPrank")]
+    [InlineData("Be a snowplow.", "robot_show_snowplow", "RA_JBO_ShowSnowPlow")]
+    [InlineData("Bs snow plow.", "robot_show_snowplow", "RA_JBO_ShowSnowPlow")]
+    [InlineData("Snowball fight.", "robot_throw_snowball", "RA_JBO_ThrowSnowball")]
+    [InlineData("Do you need to eat?", "robot_can_get_hungry", "RI_JBO_CanGetHungry")]
+    [InlineData("Do you have a soul?", "robot_has_soul", "RI_JBO_HasSoul")]
+    [InlineData("Do you have pets?", "robot_has_pets", "RI_JBO_HasPets")]
+    [InlineData("Do some spring cleaning.", "robot_do_spring_cleaning", "RA_JBO_DoSpringCleaning")]
+    public async Task BuildDecisionAsync_PegasusQuip_BypassesSearchAndUsesSpecificMim(
+        string transcript, string intent, string mimId)
+    {
+        var search = new StubKnowledgeSearchService(
+            new KnowledgeSearchResult("Unexpected search result.", SearchBackendKind.Wolfram));
+        var decision = await CreateService(knowledgeSearchService: search).BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = transcript
+        });
+
+        Assert.Equal(intent, decision.IntentName);
+        Assert.Equal(mimId, decision.SkillPayload?["mim_id"]);
+        Assert.False(string.IsNullOrWhiteSpace(decision.ReplyText));
+        Assert.DoesNotMatch("<[^>]+>", decision.ReplyText);
+        Assert.Equal(0, search.SearchCount);
+        if (intent == "robot_tell_haiku")
+        {
+            var esml = Assert.IsType<string>(decision.SkillPayload!["esml"]);
+            Assert.NotEmpty(System.Xml.Linq.XElement.Parse(esml).Descendants("break"));
+        }
+        if (intent == "robot_give_high_five")
+        {
+            var esml = Assert.IsType<string>(decision.SkillPayload!["esml"]);
+            var root = System.Xml.Linq.XElement.Parse(esml);
+            Assert.Single(root.Descendants("pitch"));
+            Assert.Single(root.Descendants("break"));
+        }
+    }
+
+    [Theory]
+    [InlineData("requestTurnOffEye", null, null, "robot_turn_off_eye")]
+    [InlineData("requestTellJiboContent", "JiboContent", "Fortune", "robot_tell_fortune")]
+    [InlineData("requestTellJiboContent", "JiboContent", "Riddle", "robot_tell_riddle")]
+    [InlineData("requestTellJiboContent", "JiboContent", "Haiku", "robot_tell_haiku")]
+    [InlineData("requestTellJiboContent", "JiboContent", "DeepThought", "robot_tell_deep_thought")]
+    [InlineData("requestMakeSound", "AnimalSound", "Dog", "robot_make_dog_sound")]
+    [InlineData("requestStory", null, null, "robot_story")]
+    [InlineData("requestCountToNumber", "CountNumber", "10", "robot_count_to_ten")]
+    [InlineData("requestShowImage", "Emoji", "Wave", "robot_wave")]
+    [InlineData("requestTellJiboContent", "JiboContent", "HumanFact", "robot_tell_human_fact")]
+    [InlineData("requestMakeSound", "Animal", "Fox", "robot_make_fox_sound")]
+    [InlineData("requestTellJiboContent", "Joke", "NewYearsJoke", "robot_tell_new_year_joke")]
+    [InlineData("requestTellJiboContent", "JiboContent", "FunFact", "fun_fact")]
+    [InlineData("requestShowImage", "Emoji", "Moon", "robot_show_moon")]
+    [InlineData("requestShowImage", null, null, "robot_show_emoji")]
+    [InlineData("requestShowImage", "Emoji", "RockingBoat", "robot_rock_boat")]
+    [InlineData("requestShowImage", "Emoji", "OldMacintosh", "robot_show_macintosh")]
+    [InlineData("requestFigureSkate", null, null, "robot_figure_skate")]
+    [InlineData("requestSkiJump", null, null, "robot_ski_jump")]
+    public async Task BuildDecisionAsync_PegasusQuip_AcceptsNativeIntentWithoutTranscript(
+        string clientIntent, string? entity, string? value, string expectedIntent)
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext
+        {
+            Attributes = new Dictionary<string, object?>
+            {
+                ["messageType"] = "CLIENT_NLU",
+                ["clientIntent"] = clientIntent,
+                ["clientEntities"] = entity is null ? null : new Dictionary<string, string> { [entity] = value! }
+            }
+        });
+        Assert.Equal(expectedIntent, decision.IntentName);
+        Assert.True(!string.IsNullOrWhiteSpace(decision.ReplyText) ||
+                    decision.SkillPayload?.TryGetValue("esml", out var markup) == true && markup is string);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_PegasusQuip_UnknownNamedEmojiDoesNotPlayGenericEmoji()
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "show me an octopus emoji",
+            Attributes = new Dictionary<string, object?>
+            {
+                ["messageType"] = "CLIENT_NLU",
+                ["clientIntent"] = "requestShowImage",
+                ["clientEntities"] = new Dictionary<string, string> { ["Emoji"] = "Octopus" }
+            }
+        });
+
+        Assert.Equal("not_understood", decision.IntentName);
+    }
+
+    [Theory]
+    [InlineData("peek at my kitchen lights", "not_understood")]
+    [InlineData("Can you turn off my bedroom light?", "ha_lights_off")]
+    [InlineData("Do you know any stories?", "robot_story")]
+    [InlineData("Tell me a fact.", "fun_fact")]
+    [InlineData("Can you whistle?", "robot_can_whistle")]
+    [InlineData("Can you laugh?", "robot_can_laugh")]
+    [InlineData("How well did you sleep?", "robot_how_was_sleep")]
+    [InlineData("Do you love to take naps?", "robot_likes_sleep")]
+    public async Task BuildDecisionAsync_PegasusQuip_PreservesDistinctRoutes(string transcript, string intent)
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext { RawTranscript = transcript });
+        Assert.Equal(intent, decision.IntentName);
+    }
+
+    [Theory]
     [InlineData("sneeze", "request_sneeze", "Robots don't sneeze")]
     [InlineData("are you ready", "robot_is_ready", "ready for anything")]
     [InlineData("are you ready for today", "robot_is_ready_for_day", "ready")]
@@ -1864,15 +2058,18 @@ public sealed class JiboInteractionServiceTests
         Assert.NotEqual("robot_favorite_flower", decision.IntentName);
     }
 
-    [Fact]
-    public async Task BuildDecisionAsync_SeasonalSantaTracker_UsesAnimatedSkillPayload()
+    [Theory]
+    [InlineData("show santa tracker")]
+    [InlineData("track santa")]
+    [InlineData("search for santa")]
+    public async Task BuildDecisionAsync_SeasonalSantaTracker_UsesAnimatedSkillPayload(string transcript)
     {
         var service = CreateService();
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
-            RawTranscript = "show santa tracker",
-            NormalizedTranscript = "show santa tracker"
+            RawTranscript = transcript,
+            NormalizedTranscript = transcript
         });
 
         Assert.Equal("seasonal_santa_tracker", decision.IntentName);
@@ -1884,7 +2081,55 @@ public sealed class JiboInteractionServiceTests
             decision.SkillPayload["prompt_id"]?.ToString(),
             StringComparison.Ordinal);
         Assert.Equal("AN", decision.SkillPayload["prompt_sub_category"]);
-        Assert.Contains("santa-scanner", decision.SkillPayload["esml"]?.ToString(), StringComparison.OrdinalIgnoreCase);
+        var esml = Assert.IsType<string>(decision.SkillPayload["esml"]);
+        Assert.Contains("'", decision.ReplyText, StringComparison.Ordinal);
+        Assert.DoesNotContain("&apos;", esml, StringComparison.Ordinal);
+        var speak = System.Xml.Linq.XElement.Parse(esml);
+        Assert.Contains("'", speak.Value, StringComparison.Ordinal);
+        var animation = Assert.Single(speak.Elements("anim"));
+        Assert.Null(animation.Attribute("nonBlocking"));
+        Assert.StartsWith("santa-scanner,", (string?)animation.Attribute("filter"), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("2026-01-31T23:55:00-08:00", "RA_JBO_ShowMittens_AN_01_FnL")]
+    [InlineData("2026-02-01T00:05:00-08:00", "RA_JBO_ShowMittens_AN_02_FnL")]
+    public async Task BuildDecisionAsync_PegasusQuip_MittensUsesRobotsLocalDate(string iso, string prompt)
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "show me mittens",
+            Attributes = new Dictionary<string, object?>
+            {
+                ["context"] = JsonSerializer.Serialize(new { runtime = new { location = new { iso } } })
+            }
+        });
+
+        Assert.Equal("robot_show_mittens", decision.IntentName);
+        Assert.Equal(prompt, decision.SkillPayload?["prompt_id"]);
+        var esml = Assert.IsType<string>(decision.SkillPayload?["esml"]);
+        var speak = System.Xml.Linq.XElement.Parse(esml);
+        Assert.Equal(decision.ReplyText, speak.Value.Trim());
+        var animation = Assert.Single(speak.Elements());
+        Assert.Equal("anim", animation.Name.LocalName);
+        Assert.Equal("emoji_mittens_01", (string?)animation.Attribute("name"));
+        Assert.Equal("!audio", (string?)animation.Attribute("layers"));
+        Assert.Null(animation.Attribute("nonBlocking"));
+        Assert.Empty(animation.Nodes());
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_PegasusQuip_RoseWithTrailingReactionKeepsAnimation()
+    {
+        var decision = await CreateService().BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "Give me a rose, oh wow."
+        });
+
+        Assert.Equal("robot_give_rose", decision.IntentName);
+        Assert.Equal("RA_JBO_GiveRose", decision.SkillPayload?["mim_id"]);
+        var esml = Assert.IsType<string>(decision.SkillPayload?["esml"]);
+        Assert.Single(System.Xml.Linq.XElement.Parse(esml).Descendants("anim"));
     }
 
     [Theory]
@@ -2455,6 +2700,30 @@ public sealed class JiboInteractionServiceTests
         Assert.Equal("request_sneeze", decision.IntentName);
         Assert.Contains("filter='sneeze'", decision.SkillPayload?["esml"]?.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, search.SearchCount);
+    }
+
+    [Fact]
+    public async Task BuildDecisionAsync_Sneeze_EscapesSpokenTextInAnimationPayload()
+    {
+        var catalog = new JiboExperienceCatalog
+        {
+            MimReplies = new Dictionary<string, IReadOnlyList<JiboConditionedReply>>
+            {
+                ["RA_JBO_Sneeze"] = [new JiboConditionedReply { Reply = "Okay & here goes." }]
+            }
+        };
+        var service = CreateService(contentRepository: new StaticCatalogRepository(catalog));
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = "sneeze",
+            NormalizedTranscript = "sneeze"
+        });
+
+        Assert.Equal("request_sneeze", decision.IntentName);
+        Assert.Equal("Okay & here goes.", decision.ReplyText);
+        var root = System.Xml.Linq.XElement.Parse(Assert.IsType<string>(decision.SkillPayload!["esml"]));
+        Assert.Equal(decision.ReplyText, root.Element("es")!.Value);
+        Assert.Equal("sneeze", root.Element("anim")!.Attribute("filter")!.Value);
     }
 
     [Fact]
@@ -3736,6 +4005,7 @@ public sealed class JiboInteractionServiceTests
         {
             RawTranscript = "yes",
             NormalizedTranscript = "yes",
+            TimeZone = "UTC", // Match the UTC date used by this calendar fixture.
             Attributes = new Dictionary<string, object?>
             {
                 [PersonalReportStateKey] = "awaiting_identity_confirmation",
@@ -4633,8 +4903,11 @@ public sealed class JiboInteractionServiceTests
         Assert.Equal("Athens Greece", provider.LastRequest?.LocationQuery);
     }
 
-    [Fact]
-    public async Task BuildDecisionAsync_WeatherForUnknownPlace_AsksTheAiInsteadOfServiceDown()
+    [Theory]
+    [InlineData("what's the weather in crete")]
+    [InlineData("what's the weather tomorrow in crete")]
+    [InlineData("what's the weather next week in crete")]
+    public async Task BuildDecisionAsync_WeatherForUnknownPlace_PreservesPeriodInSearch(string transcript)
     {
         var provider = new CapturingWeatherReportProvider { Snapshot = null };
         var search = new StubKnowledgeSearchService(new KnowledgeSearchResult(
@@ -4644,13 +4917,14 @@ public sealed class JiboInteractionServiceTests
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
-            RawTranscript = "what's the weather in crete",
-            NormalizedTranscript = "what's the weather in crete"
+            RawTranscript = transcript,
+            NormalizedTranscript = transcript
         });
 
         Assert.Equal("knowledge_search", decision.IntentName);
         Assert.Contains("Crete", decision.ReplyText, StringComparison.Ordinal);
         Assert.Equal(1, search.SearchCount);
+        Assert.Equal(transcript, search.LastQuery);
     }
 
     [Fact]
@@ -6115,15 +6389,18 @@ public sealed class JiboInteractionServiceTests
             StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task BuildDecisionAsync_CanYouDream_UsesSourceBackedCanDreamReply()
+    [Theory]
+    [InlineData("can you dream")]
+    [InlineData("do you dream")]
+    [InlineData("Hey Jibo, do you dream?")]
+    public async Task BuildDecisionAsync_DreamAbilityQuestion_UsesSourceBackedCanDreamReply(string transcript)
     {
         var service = CreateService();
 
         var decision = await service.BuildDecisionAsync(new TurnContext
         {
-            RawTranscript = "can you dream",
-            NormalizedTranscript = "can you dream"
+            RawTranscript = transcript,
+            NormalizedTranscript = transcript
         });
 
         Assert.Equal("robot_can_dream", decision.IntentName);
@@ -7472,6 +7749,9 @@ public sealed class JiboInteractionServiceTests
 
         Assert.Equal("cloud_version", decision.IntentName);
         Assert.Equal(OpenJiboCloudBuildInfo.SpokenVersion, decision.ReplyText);
+        Assert.Equal($"My cloud version is {OpenJiboCloudBuildInfo.Version.Replace(".", " dot ")}.",
+            decision.ReplyText);
+        Assert.False(decision.SkillPayload?.ContainsKey("esml") ?? false);
         Assert.DoesNotContain("Jibo", decision.ReplyText, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -7899,10 +8179,12 @@ public sealed class JiboInteractionServiceTests
     {
         public bool IsConfigured => true;
         public int SearchCount { get; private set; }
+        public string? LastQuery { get; private set; }
 
         public Task<KnowledgeSearchResult?> SearchAsync(string query, CancellationToken cancellationToken = default)
         {
             SearchCount += 1;
+            LastQuery = query;
             return Task.FromResult(result);
         }
     }

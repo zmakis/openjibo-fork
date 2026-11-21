@@ -171,7 +171,9 @@ public sealed class JiboWebSocketServiceTests
             .GetProperty("play")
             .GetProperty("esml")
             .GetString();
-        Assert.Contains("Cloud version", esml, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            $"<speak><es cat='neutral' filter='!ssa-only, !sfx-only' endNeutral='true'>My cloud version is {OpenJiboCloudBuildInfo.Version.Replace(".", " dot ")}.</es></speak>",
+            esml);
         Assert.DoesNotContain("Jibo", esml, StringComparison.OrdinalIgnoreCase);
 
         var session = _store.FindSessionByToken("hub-cloud-version-token");
@@ -6161,6 +6163,124 @@ public sealed class JiboWebSocketServiceTests
         Assert.True(session.FollowUpOpen);
     }
 
+    [Theory]
+    [InlineData("rap", "robot_rap", "RA_JBO_Rap")]
+    [InlineData("sing", "robot_sing", "runtime-song")]
+    public async Task ClientAsr_ShortPerformanceCommand_ReachesPlayback(string text, string intent, string mimId)
+    {
+        var replies = await _service.HandleMessageAsync(new WebSocketMessageEnvelope
+        {
+            HostName = "neo-hub.jibo.com",
+            Path = "/listen",
+            Kind = "neo-hub-listen",
+            Token = "hub-performance-token",
+            Text = JsonSerializer.Serialize(new
+            {
+                type = "CLIENT_ASR",
+                transID = "performance-turn",
+                data = new { text, rules = new[] { "launch" } }
+            })
+        });
+
+        var skill = Assert.Single(replies, reply => ReadReplyType(reply) == "SKILL_ACTION");
+        using var payload = JsonDocument.Parse(skill.Text!);
+        var play = payload.RootElement.GetProperty("data").GetProperty("action")
+            .GetProperty("config").GetProperty("jcp").GetProperty("config").GetProperty("play");
+        Assert.Equal(mimId, play.GetProperty("meta").GetProperty("mim_id").GetString());
+        Assert.Equal(intent, _store.FindSessionByToken("hub-performance-token")?.LastIntent);
+    }
+
+    [Theory]
+    [InlineData("wink", "robot_wink", "RA_JBO_Wink", "blinks")]
+    [InlineData("Do a magic trick", "robot_magic_trick", "RA_JBO_MagicTrick", "emoji")]
+    [InlineData("meow", "robot_make_cat_sound", "RA_JBO_MakeSoundCat", "emoji")]
+    [InlineData("bark", "robot_make_dog_sound", "RA_JBO_MakeSoundDog", "emoji")]
+    [InlineData("wave", "robot_wave", "RA_JBO_ShowWaveEmoji", "emoji")]
+    [InlineData("count to ten", "robot_count_to_ten", "RA_JBO_CountTo10", "emoji")]
+    [InlineData("blow a bubble", "robot_blow_bubbles", "RA_JBO_BlowBubble", "jiboji")]
+    [InlineData("dab", "robot_dab", "RA_JBO_DanceDab", "dance")]
+    [InlineData("laugh", "robot_laugh", "RA_JBO_Laugh", "happy")]
+    [InlineData("show me the moon", "robot_show_moon", "RA_JBO_ShowMoon", "emoji")]
+    [InlineData("show me a snowglobe", "robot_show_snowglobe", "RA_JBO_ShowSnowglobe", "jiboji")]
+    [InlineData("can i have a rose", "robot_give_rose", "RA_JBO_GiveRose", "jiboji")]
+    [InlineData("show me a snowman", "robot_show_snowman", "RA_JBO_ShowSnowman", "emoji")]
+    [InlineData("show me mittens", "robot_show_mittens", "RA_JBO_ShowMittens", null, "emoji_mittens_01")]
+    [InlineData("draw a picture", "robot_draw_picture", "RA_JBO_DrawPicture", "ib")]
+    [InlineData("shovel snow", "robot_shovel_snow", "RA_JBO_ShovelSnow", "jiboji")]
+    [InlineData("show me a baseball", "robot_show_baseball", "RA_JBO_ShowBaseball", null, "jiboji_baseball_hit_01")]
+    [InlineData("show me a basketball", "robot_show_basketball", "RA_JBO_ShowBasketball", "jiboji")]
+    [InlineData("show me a butterfly", "robot_show_butterfly", "RA_JBO_ShowButterfly", "jiboji")]
+    public async Task ClientAsr_PegasusQuip_EmitsAnimationMarkup(
+        string text, string intent, string mimId, string? animationCategory, string? animationName = null)
+    {
+        var replies = await _service.HandleMessageAsync(new WebSocketMessageEnvelope
+        {
+            HostName = "neo-hub.jibo.com",
+            Path = "/listen",
+            Kind = "neo-hub-listen",
+            Token = "hub-pegasus-quip-token",
+            Text = JsonSerializer.Serialize(new
+            {
+                type = "CLIENT_ASR",
+                transID = "pegasus-quip-turn",
+                data = new { text, rules = new[] { "launch" } }
+            })
+        });
+
+        var skill = Assert.Single(replies, reply => ReadReplyType(reply) == "SKILL_ACTION");
+        using var payload = JsonDocument.Parse(skill.Text!);
+        var play = payload.RootElement.GetProperty("data").GetProperty("action")
+            .GetProperty("config").GetProperty("jcp").GetProperty("config").GetProperty("play");
+        Assert.Equal(mimId, play.GetProperty("meta").GetProperty("mim_id").GetString());
+        var esml = System.Xml.Linq.XElement.Parse(play.GetProperty("esml").GetString()!);
+        Assert.Contains(esml.Descendants("anim"), node => animationName is not null
+            ? (string?)node.Attribute("name") == animationName
+            : (string?)node.Attribute("cat") == animationCategory);
+        if (intent == "robot_count_to_ten")
+        {
+            var count = Assert.Single(esml.Descendants("anim")).Value;
+            var numbers = System.Text.RegularExpressions.Regex.Matches(count, @"\d+")
+                .Select(match => int.Parse(match.Value));
+            Assert.Equal(Enumerable.Range(1, 10), numbers);
+        }
+        Assert.Equal(intent, _store.FindSessionByToken("hub-pegasus-quip-token")?.LastIntent);
+    }
+
+    [Theory]
+    [InlineData("play the guitar", "RA_JBO_PlayGuitar", "dance", "?(flamenco-guitar,rockabilly)")]
+    [InlineData("show me a turtle", "RA_JBO_ShowTurtle", "emoji", "turtle, !hf")]
+    [InlineData("blink", "RA_JBO_Blink", "blinks", null)]
+    [InlineData("bow", "RA_JBO_Bow", null, "bow")]
+    [InlineData("fly a kite", "RA_JBO_ShowKite", "jiboji", "kite")]
+    public async Task ClientAsr_PegasusQuip_AnimationOnlyMimReachesPlayback(
+        string text, string mimId, string? category, string? filter)
+    {
+        var replies = await _service.HandleMessageAsync(new WebSocketMessageEnvelope
+        {
+            HostName = "neo-hub.jibo.com",
+            Path = "/listen",
+            Kind = "neo-hub-listen",
+            Token = "hub-animation-only-token",
+            Text = JsonSerializer.Serialize(new
+            {
+                type = "CLIENT_ASR",
+                transID = "animation-only-turn",
+                data = new { text, rules = new[] { "launch" } }
+            })
+        });
+
+        var skill = Assert.Single(replies, reply => ReadReplyType(reply) == "SKILL_ACTION");
+        using var payload = JsonDocument.Parse(skill.Text!);
+        var play = payload.RootElement.GetProperty("data").GetProperty("action")
+            .GetProperty("config").GetProperty("jcp").GetProperty("config").GetProperty("play");
+        Assert.Equal(mimId, play.GetProperty("meta").GetProperty("mim_id").GetString());
+        var esml = System.Xml.Linq.XElement.Parse(play.GetProperty("esml").GetString()!);
+        var animation = Assert.Single(esml.Descendants("anim"));
+        Assert.Equal(category, (string?)animation.Attribute("cat"));
+        Assert.Equal(filter, (string?)animation.Attribute("filter"));
+        Assert.Empty(esml.Value.Trim().Trim('.'));
+    }
+
     [Fact]
     public async Task ClientAsr_LeadingFillerBeforeGreeting_IsStrippedAndRoutesToGreeting()
     {
@@ -7818,13 +7938,16 @@ public sealed class JiboWebSocketServiceTests
         Assert.Equal(0, session.TurnState.BufferedAudioBytes);
     }
 
-    [Fact]
-    public async Task BufferedHotphraseOggAudio_RobotVersionSelfAudioEarlyProbeStaysOpenBeforeHardTimeout()
+    [Theory]
+    [InlineData("cloud version 1 dot 0 dot 20")]
+    [InlineData("my cloud version is 1 dot 0 dot 20")]
+    [InlineData("my cloud version is one dot zero dot twenty")]
+    public async Task BufferedHotphraseOggAudio_RobotVersionSelfAudioEarlyProbeStaysOpenBeforeHardTimeout(string transcript)
     {
         var stateStore = new InMemoryCloudStateStore();
         var service = CreateService(stateStore, sttStrategies:
         [
-            new QueuedBufferedAudioSttStrategy("cloud version 1 dot 0 dot 20")
+            new QueuedBufferedAudioSttStrategy(transcript)
         ]);
 
         await service.HandleMessageAsync(new WebSocketMessageEnvelope
@@ -9336,7 +9459,7 @@ public sealed class JiboWebSocketServiceTests
             Kind = "neo-hub-proactive",
             Token = token,
             Text =
-                """{"type":"CONTEXT","transID":"trans-proactive-contract-a","data":{"runtime":{"perception":{"speaker":"person-1"},"loop":{"users":[{"id":"person-1","firstName":"jake"}]}}}}"""
+                """{"type":"CONTEXT","transID":"trans-proactive-contract-a","data":{"runtime":{"perception":{"speaker":"person-1"},"loop":{"users":[{"id":"person-2","firstName":"jake"}]}}}}"""
         });
 
         var reply = Assert.Single(contextReplies);
@@ -9391,8 +9514,12 @@ public sealed class JiboWebSocketServiceTests
         Assert.Equal(target.DeviceId, reconnect.Metadata["registeredDeviceId"]?.ToString());
     }
 
-    [Fact]
-    public async Task ProactivePresence_EmitsMatchThenSkillActionWithoutListenFrames()
+    [Theory]
+    [InlineData("PRESENCE", false)]
+    [InlineData("NEW_ARRIVAL", false)]
+    [InlineData("SURPRISE", true)]
+    public async Task ProactiveKnownPerson_EmitsMatchThenSkillActionWithoutListenFrames(
+        string triggerSource, bool skipSurprises)
     {
         var token = _store.IssueHubToken("proactive-contract-device-b");
         const string connectionId = "proactive-contract-connection-b";
@@ -9404,8 +9531,12 @@ public sealed class JiboWebSocketServiceTests
             Path = "/v1/proactive",
             Kind = "neo-hub-proactive",
             Token = token,
-            Text =
-                """{"type":"TRIGGER","transID":"trans-proactive-contract-b","data":{"triggerSource":"PRESENCE","triggerData":{"looperID":"person-1"}}}"""
+            Text = JsonSerializer.Serialize(new
+            {
+                type = "TRIGGER",
+                transID = "trans-proactive-contract-b",
+                data = new { triggerSource, triggerData = new { looperID = "person-1" } }
+            })
         });
         Assert.Empty(triggerReplies);
 
@@ -9427,7 +9558,13 @@ public sealed class JiboWebSocketServiceTests
         using var payload = JsonDocument.Parse(contextReplies[0].Text!);
         Assert.False(payload.RootElement.GetProperty("final").GetBoolean());
         Assert.True(payload.RootElement.GetProperty("data").TryGetProperty("match", out var match));
-        Assert.False(match.GetProperty("skipSurprises").GetBoolean());
+        Assert.Equal(skipSurprises, match.GetProperty("skipSurprises").GetBoolean());
+        if (skipSurprises)
+        {
+            var session = Assert.IsType<CloudSession>(_store.FindActiveSessionByToken(token));
+            Assert.Contains(session.LastIntent, new[] { "proactive_fun_fact", "proactive_joke" });
+            Assert.False(session.FollowUpOpen);
+        }
     }
 
     [Fact]

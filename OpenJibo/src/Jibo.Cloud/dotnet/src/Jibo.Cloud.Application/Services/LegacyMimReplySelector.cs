@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Jibo.Cloud.Application.Abstractions;
 
 namespace Jibo.Cloud.Application.Services;
@@ -5,6 +6,7 @@ namespace Jibo.Cloud.Application.Services;
 internal sealed class LegacyMimSelection
 {
     public required string ReplyText { get; init; }
+    public string? Esml { get; init; }
     public string? MimId { get; init; }
     public string? PromptId { get; init; }
     public string? Emotion { get; init; }
@@ -36,18 +38,36 @@ internal static class LegacyMimReplySelector
             return new LegacyMimSelection
             {
                 ReplyText = LegacyMimTemplateRenderer.Render(fallbackReply, displayName),
+                Esml = LegacyMimTemplateRenderer.RenderEsml(fallbackReply, displayName),
                 MimId = fallbackMimId
             };
         }
 
         var chosen = ChooseWeighted(randomizer, pool);
+        var isSantaTracker = string.Equals(chosen.MimId, "RA_JBO_ShowSantaTracker", StringComparison.OrdinalIgnoreCase);
+        var isMittens = string.Equals(chosen.MimId, "RA_JBO_ShowMittens", StringComparison.OrdinalIgnoreCase);
+        var replyText = LegacyMimTemplateRenderer.Render(chosen.Reply, displayName);
         return new LegacyMimSelection
         {
-            ReplyText = LegacyMimTemplateRenderer.Render(chosen.Reply, displayName),
+            ReplyText = replyText,
+            Esml = isMittens
+                ? BuildMittensPlayback(replyText)
+                : LegacyMimTemplateRenderer.RenderEsml(chosen.Reply, displayName,
+                    preserveAnimation: isSantaTracker || PegasusQuipRoutes.PreservesAnimation(chosen.MimId),
+                    preservePitch: isSantaTracker || PegasusQuipRoutes.PreservesPitch(chosen.MimId),
+                    wrapInExpressiveSpeech: !isSantaTracker),
             MimId = chosen.MimId,
             PromptId = chosen.PromptId,
             Emotion = chosen.Emotion
         };
+    }
+
+    private static string BuildMittensPlayback(string replyText)
+    {
+        // The full-length clip cannot be shortened to fit the TTS word timings.
+        return new XElement("speak", replyText, " ",
+            new XElement("anim", new XAttribute("name", "emoji_mittens_01"), new XAttribute("layers", "!audio")))
+            .ToString(SaveOptions.DisableFormatting);
     }
 
     internal static string SelectReplyText(

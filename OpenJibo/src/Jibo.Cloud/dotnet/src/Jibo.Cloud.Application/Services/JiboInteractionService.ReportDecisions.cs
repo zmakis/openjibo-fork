@@ -171,9 +171,7 @@ public sealed partial class JiboInteractionService
             return null;
 
         await EnsureSearchThinkingPreludeAsync(cancellationToken);
-        var decision = await TryBuildKnowledgeSearchDecisionAsync(
-            $"What is the weather like in {locationQuery} right now? ({transcript})",
-            cancellationToken);
+        var decision = await TryBuildKnowledgeSearchDecisionAsync(transcript, cancellationToken);
         return decision is not null &&
                string.Equals(decision.IntentName, "knowledge_search", StringComparison.OrdinalIgnoreCase)
             ? decision
