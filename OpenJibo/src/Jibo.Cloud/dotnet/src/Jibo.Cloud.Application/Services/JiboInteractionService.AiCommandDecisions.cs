@@ -61,15 +61,6 @@ public sealed partial class JiboInteractionService
         return decision;
     }
 
-    internal static bool IsDescribeWhatYouSeeRequest(string lowered) =>
-        !string.IsNullOrWhiteSpace(lowered) &&
-        (lowered.Contains("what do you see", StringComparison.Ordinal) ||
-         lowered.Contains("what can you see", StringComparison.Ordinal) ||
-         lowered.Contains("what did you see", StringComparison.Ordinal) ||
-         lowered.Contains("what are you seeing", StringComparison.Ordinal) ||
-         lowered.Contains("what you see", StringComparison.Ordinal) ||
-         lowered.Contains("in front of you", StringComparison.Ordinal));
-
     private static JiboInteractionDecision BuildAiCommandUnsupportedDecision() =>
         new(
             "ai_command_unsupported",

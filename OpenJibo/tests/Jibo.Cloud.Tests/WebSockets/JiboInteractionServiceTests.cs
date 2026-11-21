@@ -2354,6 +2354,25 @@ public sealed class JiboInteractionServiceTests
         Assert.Equal(1, search.SearchCount);
     }
 
+    [Theory]
+    [InlineData("do you see")]
+    [InlineData("can you see")]
+    public async Task BuildDecisionAsync_ClippedSeeQuestion_WithKnowledgeSearchConfigured_AsksTheAi(string transcript)
+    {
+        var search = new StubKnowledgeSearchService(
+            new KnowledgeSearchResult("I see you waving.", SearchBackendKind.ChatGPT));
+        var service = CreateService(knowledgeSearchService: search);
+
+        var decision = await service.BuildDecisionAsync(new TurnContext
+        {
+            RawTranscript = transcript,
+            NormalizedTranscript = transcript
+        });
+
+        Assert.NotEqual("robot_can_see", decision.IntentName);
+        Assert.Equal(1, search.SearchCount);
+    }
+
     [Fact]
     public async Task BuildDecisionAsync_WhatDoYouSee_WithoutAi_KeepsStockReply()
     {
