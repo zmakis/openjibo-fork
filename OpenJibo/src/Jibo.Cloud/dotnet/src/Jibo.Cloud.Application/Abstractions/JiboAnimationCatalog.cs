@@ -74,13 +74,13 @@ public static class JiboAnimationCatalog
     /// Unknown names return false so a made-up name can never reach the robot.
     /// </summary>
     /// <summary>
-    /// Server-only pseudo animation: Jibo glances down while his base light ring lights up,
+    /// Server-only pseudo animation: a soft glow on the base light ring (LED layer only),
     /// played when Jibo has just used his camera, like a "recording" light.
     /// </summary>
     public const string LightRing = "light_ring";
 
     public const string LightRingTag =
-        "<anim cat='various' filter='check-lightring, !tuck' nonBlocking='true' />";
+        "<anim cat='yoga' filter='light-ring-only, breathing' layers='LED' nonBlocking='true' />";
 
     public static bool TryBuildAnimTag(string? name, out string esmlTag)
     {
