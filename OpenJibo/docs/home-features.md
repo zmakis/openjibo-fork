@@ -1,0 +1,61 @@
+# Home features in this fork (zmakis/openjibo-fork)
+
+Extra features running on a home Jibo with a self-hosted OpenJibo server and Claude as
+the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` for all settings.
+
+## Claude brain
+- One Claude Messages API call per question. Claude can answer directly (with a mood),
+  ask Jibo to run one of his own skills (the `jibo_command` tool), or search the web for
+  current events (`OPENJIBO_WEB_SEARCH`, `OPENJIBO_WEB_SEARCH_MAX_USES`).
+- Answers come back without "According to ..." prefixes.
+
+## Expressions
+- Answers can carry a mood (happy / sad) plus a jiboji, emoji or gesture.
+- Emoji are eye-only, so the spoken words are wrapped inside the `<anim>` tag; that keeps
+  the picture on screen while Jibo talks.
+
+## Live camera vision ("what do you see")
+- See-questions take a fresh photo from Jibo's own camera through the robot's local media
+  service and send it to the AI. Set `OPENJIBO_JIBO_CAMERA_URL=http://<jibo-ip>:8486`.
+- The camera needs about 2 minutes to be ready after a robot or server restart.
+
+## Camera light (base light ring)
+- While Jibo describes a photo he just took (or learns a face), his base light ring glows
+  white, like a recording light. It uses the yoga skill's LED-only animation:
+  `<anim cat='yoga' filter='light-ring-only, breathing' layers='LED' nonBlocking='true' />`.
+- The glow plays while he answers, not at the exact moment of the photo.
+- Turn off with `OPENJIBO_LIGHT_RING_ON_PHOTO=false`.
+
+## Face memory (server side, local)
+- The `faces` container (OpenCV YuNet + SFace, no cloud) learns family faces. Face data stays
+  in the `faces-data` volume.
+- Teach someone: say "learn Makis face", or run
+  `docker compose --profile self-hosted exec faces python /app/teach.py Makis` 3-5 times,
+  turning the head slightly each time. `--list` and `--forget NAME` also work.
+- "Who am I" / "what do you see" then use the names.
+- "I'm Makis" phrases are caught on the robot and never reach the server, so use
+  "learn X face" instead.
+- Strictness: `OPENJIBO_FACES_MATCH_THRESHOLD` (default 0.36). `docker compose logs faces`
+  shows the match scores.
+
+## Jibo's own face/voice ID in AI answers
+- With each turn the robot sends `context.runtime.perception` (`speaker`, `peoplePresent`).
+  OpenJibo maps those IDs to loop first names, and the name is now passed to the AI.
+- When a fresh photo's face memory names someone different, the AI trusts the photo.
+- Check it: `docker compose logs -f api | grep "Robot perception"`.
+
+## Speech recognition (Whisper)
+- With `OPENJIBO_STT_WHISPER_LANGUAGE=auto`, short English was sometimes detected as Korean,
+  Spanish or Polish. Now, if the detected language isn't in
+  `OPENJIBO_STT_WHISPER_ALLOWED_LANGUAGES` (default `en,el`), the same recording is re-read
+  as English. Set `any` to keep every detected language.
+
+## Server reliability
+- `scripts/self-hosted/home-server-watchdog.sh` (installed by `install-watchdog.sh`) cleans
+  disk space at 85% and restarts the HTTPS proxy if needed.
+- Keep the Docker build cache: a rebuild takes 2-3 minutes with it and 10-15 without it.
+
+## Upstream
+- Synced with upstream OpenJibo (`git fetch upstream && git merge upstream/main`).
+- Contributed upstream: PR #341 (weather, watchdog, Whisper profile; merged) and PR #342
+  (live camera vision, opt-in).

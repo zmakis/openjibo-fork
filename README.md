@@ -2,6 +2,10 @@
 
 This repository is the working lab for bringing Jibo back.
 
+**This fork** adds home features on top of OpenJibo: a Claude brain, live camera vision,
+local face memory, a camera light on the base ring and more. See
+[OpenJibo/docs/home-features.md](OpenJibo/docs/home-features.md).
+
 The active OpenJibo work lives in [OpenJibo/README.md](OpenJibo/README.md), and the long-range story now lives in [OpenJibo/docs/roadmap.md](OpenJibo/docs/roadmap.md).
 
 For a fresh self-hosting experiment, see the tested, opt-in
