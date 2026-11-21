@@ -2539,6 +2539,7 @@ public sealed class JiboInteractionServiceTests
     [InlineData("coin-flip", "<anim cat='jiboji' filter='coin-flip' nonBlocking='true' />")]
     [InlineData("Heart", "<anim cat='emoji' filter='heart, !hf' layers='!audio' />")]
     [InlineData("yes", "<anim cat='yes' filter='!audio-only, !ssa-only' nonBlocking='true' />")]
+    [InlineData("light_ring", "<anim cat='yoga' filter='light-ring-only, breathing' layers='LED' nonBlocking='true' />")]
     public void JiboAnimationCatalog_BuildsTagsForKnownNames(string name, string expected)
     {
         Assert.True(JiboAnimationCatalog.TryBuildAnimTag(name, out var tag));

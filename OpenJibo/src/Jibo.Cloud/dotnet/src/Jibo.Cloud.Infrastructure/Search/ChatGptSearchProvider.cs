@@ -117,6 +117,10 @@ public sealed class ChatGptSearchProvider(
             history,
             cancellationToken);
 
+        // Camera "recording light": glow the base light ring while Jibo describes the photo.
+        if (attachVision && result.Outcome == KnowledgeSearchOutcome.Found && IsLightRingOnPhotoEnabled())
+            result = result with { Animation = result.Animation ?? JiboAnimationCatalog.LightRing };
+
         RememberResult(query, result);
 
         if (useCache)
@@ -516,8 +520,9 @@ public sealed class ChatGptSearchProvider(
 
     private async Task<KnowledgeSearchResult> HandleFaceCommandAsync(FaceCommand command, CancellationToken cancellationToken)
     {
+        string? ring = null;
         KnowledgeSearchResult Say(string text, string mood = "neutral") =>
-            new(text, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood);
+            new(text, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood, Animation: ring);
 
         if (string.IsNullOrEmpty(command.Name))
         {
@@ -547,6 +552,7 @@ public sealed class ChatGptSearchProvider(
             var photoPath = await TakeLiveCameraPhotoAsync(timeout.Token);
             if (photoPath is null)
                 return Say("I couldn't use my camera just now. Try again in a moment.");
+            if (IsLightRingOnPhotoEnabled()) ring = JiboAnimationCatalog.LightRing;
 
             var bytes = await System.IO.File.ReadAllBytesAsync(photoPath, timeout.Token);
             using var content = new ByteArrayContent(bytes);
@@ -912,6 +918,13 @@ public sealed class ChatGptSearchProvider(
     }
 
     // OPENJIBO_WEB_SEARCH=false turns live web search off.
+    // OPENJIBO_LIGHT_RING_ON_PHOTO=false turns off the light-ring glow after a camera photo.
+    internal static bool IsLightRingOnPhotoEnabled() =>
+        !string.Equals(
+            Environment.GetEnvironmentVariable("OPENJIBO_LIGHT_RING_ON_PHOTO")?.Trim(),
+            "false",
+            StringComparison.OrdinalIgnoreCase);
+
     private static bool IsWebSearchEnabled() =>
         !string.Equals(
             Environment.GetEnvironmentVariable("OPENJIBO_WEB_SEARCH")?.Trim(),

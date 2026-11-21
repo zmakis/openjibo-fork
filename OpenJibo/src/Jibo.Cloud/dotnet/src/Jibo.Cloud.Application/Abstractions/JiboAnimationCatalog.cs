@@ -73,13 +73,24 @@ public static class JiboAnimationCatalog
     /// Emoji pictures return the blocking form; prefer <see cref="TryBuildEmojiWrapOpenTag"/> for them.
     /// Unknown names return false so a made-up name can never reach the robot.
     /// </summary>
+    /// <summary>
+    /// Server-only pseudo animation: a soft glow on the base light ring (LED layer only),
+    /// played when Jibo has just used his camera, like a "recording" light.
+    /// </summary>
+    public const string LightRing = "light_ring";
+
+    public const string LightRingTag =
+        "<anim cat='yoga' filter='light-ring-only, breathing' layers='LED' nonBlocking='true' />";
+
     public static bool TryBuildAnimTag(string? name, out string esmlTag)
     {
         esmlTag = string.Empty;
         var key = name?.Trim().ToLowerInvariant();
         if (string.IsNullOrEmpty(key)) return false;
 
-        if (JibojiSet.Contains(key))
+        if (key == LightRing)
+            esmlTag = LightRingTag;
+        else if (JibojiSet.Contains(key))
             esmlTag = $"<anim cat='jiboji' filter='{key}' nonBlocking='true' />";
         else if (EmojiSet.Contains(key))
             esmlTag = $"<anim cat='emoji' filter='{key}, !hf' layers='!audio' />";
