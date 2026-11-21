@@ -56,7 +56,8 @@ public sealed class ChatGptSearchProvider(
         var query = request.Query.Trim();
 
         // "Learn my face, I'm Makis" / "forget my face, I'm Makis": local face recogniser.
-        var faceCommand = ParseFaceCommand(query);
+        // Also the two-step form: "learn my face" -> "What's your name?" -> "Makis".
+        var faceCommand = ParseFaceCommand(query) ?? TakePendingFaceName(query);
         if (faceCommand is not null)
             return await HandleFaceCommandAsync(faceCommand, cancellationToken);
 
@@ -434,6 +435,35 @@ public sealed class ChatGptSearchProvider(
             name);
     }
 
+    // After "learn my face" without a name, the next short answer ("Makis", "I'm Makis") is the name.
+    private DateTime _pendingFaceNameUntil = DateTime.MinValue;
+
+    private static readonly Regex NameAnswer = new(
+        @"^(?:(?:my\s+name\s+is|i\s*am|i'm|im|it's|it\s+is|this\s+is|call\s+me)\s+)?(?<name>" + NameWord +
+        @"(?:\s+" + NameWord + @")?)[\s.!]*$",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private FaceCommand? TakePendingFaceName(string query)
+    {
+        if (DateTime.UtcNow > _pendingFaceNameUntil) return null;
+        _pendingFaceNameUntil = DateTime.MinValue;
+        return ParseNameAnswer(query);
+    }
+
+    /// <summary>A bare name answer: "Makis", "I'm Makis", "my name is Mary Smith".</summary>
+    internal static FaceCommand? ParseNameAnswer(string query)
+    {
+        var match = NameAnswer.Match(query?.Trim() ?? string.Empty);
+        if (!match.Success) return null;
+        var words = match.Groups["name"].Value
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .TakeWhile(word => !NotNames.Contains(word))
+            .ToArray();
+        return words.Length == 0
+            ? null
+            : new FaceCommand(false, string.Join(' ', words.Select(w => char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant())));
+    }
+
     internal static string BuildFaceNote(FaceIdentification? faces)
     {
         if (faces is null) return string.Empty;
@@ -488,7 +518,10 @@ public sealed class ChatGptSearchProvider(
             new(text, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood);
 
         if (string.IsNullOrEmpty(command.Name))
-            return Say("I'd love to. Tell me your name too: say, learn my face, I'm, and then your name.");
+        {
+            _pendingFaceNameUntil = DateTime.UtcNow.AddSeconds(45);
+            return Say("Sure! Who are you? Say it like this: I'm Makis.");
+        }
 
         var baseUri = FacesBaseUri();
         if (baseUri is null) return Say("My face memory isn't set up on this server yet.");

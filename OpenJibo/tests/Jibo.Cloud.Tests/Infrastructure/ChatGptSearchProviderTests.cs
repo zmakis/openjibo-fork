@@ -358,6 +358,24 @@ public sealed class ChatGptSearchProviderTests
     }
 
     [Theory]
+    [InlineData("makis", "Makis")]
+    [InlineData("i'm makis", "Makis")]
+    [InlineData("my name is mary smith", "Mary Smith")]
+    [InlineData("im nick.", "Nick")]
+    public void ParseNameAnswer_ReadsBareNames(string answer, string name)
+    {
+        Assert.Equal(name, ChatGptSearchProvider.ParseNameAnswer(answer)?.Name);
+    }
+
+    [Theory]
+    [InlineData("what is the weather in athens")]
+    [InlineData("play some music now please")]
+    public void ParseNameAnswer_IgnoresLongerSentences(string answer)
+    {
+        Assert.Null(ChatGptSearchProvider.ParseNameAnswer(answer));
+    }
+
+    [Theory]
     [InlineData("what do you see")]
     [InlineData("remember to buy milk")]
     [InlineData("who am i")]
