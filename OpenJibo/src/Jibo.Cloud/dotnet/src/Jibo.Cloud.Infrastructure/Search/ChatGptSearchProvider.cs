@@ -56,7 +56,7 @@ public sealed class ChatGptSearchProvider(
         var query = request.Query.Trim();
         var cacheKey = BuildCacheKey(request.BackendSpec, model, query);
         var visionPhoto = IsVisionQuestion(query)
-            ? await WaitForFreshVisionPhotoAsync(cancellationToken)
+            ? await TakeLiveCameraPhotoAsync(cancellationToken) ?? await WaitForFreshVisionPhotoAsync(cancellationToken)
             : null;
         var attachVision = visionPhoto is not null;
         var history = GetActiveHistory();
@@ -213,6 +213,81 @@ public sealed class ChatGptSearchProvider(
     // way from the robot: wait for it a little (OPENJIBO_VISION_PHOTO_WAIT_SECONDS, default 10).
     private static TimeSpan VisionPhotoWait =>
         TimeSpan.FromSeconds(ReadPositiveIntSetting("OPENJIBO_VISION_PHOTO_WAIT_SECONDS", 10, allowZero: true));
+
+    // Jibo's on-robot media service (jibo-lps-service, port 8486) takes a photo on request:
+    // POST /media/photo {"camera":1,"type":2,"filters":[]} -> {"id":...}, then
+    // GET /media/photo?id=... returns the JPEG. Set OPENJIBO_JIBO_CAMERA_URL to
+    // http://<jibo-ip>:8486 to use it; "what do you see" then needs no "take a picture".
+    internal static Uri? LiveCameraBaseUri()
+    {
+        var raw = Environment.GetEnvironmentVariable("OPENJIBO_JIBO_CAMERA_URL")?.Trim().TrimEnd('/');
+        return !string.IsNullOrEmpty(raw) &&
+               Uri.TryCreate(raw, UriKind.Absolute, out var uri) &&
+               (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? uri
+            : null;
+    }
+
+    internal static string? ReadPhotoId(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                   document.RootElement.TryGetProperty("id", out var id) &&
+                   id.ValueKind == JsonValueKind.String &&
+                   !string.IsNullOrWhiteSpace(id.GetString())
+                ? id.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<string?> TakeLiveCameraPhotoAsync(CancellationToken cancellationToken)
+    {
+        var baseUri = LiveCameraBaseUri();
+        if (baseUri is null) return null;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
+        try
+        {
+            using var takeRequest = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, "/media/photo"))
+            {
+                Content = new StringContent(
+                    """{"camera":1,"type":2,"filters":[]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+            using var takeResponse = await httpClient.SendAsync(takeRequest, timeout.Token);
+            if (!takeResponse.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Jibo camera did not take a photo (HTTP {Status}).", (int)takeResponse.StatusCode);
+                return null;
+            }
+
+            var photoId = ReadPhotoId(await takeResponse.Content.ReadAsStringAsync(timeout.Token));
+            if (photoId is null) return null;
+
+            var imageBytes = await httpClient.GetByteArrayAsync(
+                new Uri(baseUri, "/media/photo?id=" + Uri.EscapeDataString(photoId)),
+                timeout.Token);
+            if (DetectImageMediaType(imageBytes) is null) return null;
+
+            var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "openjibo-vision-live.jpg");
+            await System.IO.File.WriteAllBytesAsync(path, imageBytes, timeout.Token);
+            logger.LogInformation("Took a live photo with Jibo's camera ({Bytes} bytes).", imageBytes.Length);
+            return path;
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Jibo camera photo failed; falling back to the latest stored photo.");
+            return null;
+        }
+    }
 
     private async Task<string?> WaitForFreshVisionPhotoAsync(CancellationToken cancellationToken)
     {

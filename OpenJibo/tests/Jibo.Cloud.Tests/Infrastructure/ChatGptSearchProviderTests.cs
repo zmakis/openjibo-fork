@@ -332,6 +332,16 @@ public sealed class ChatGptSearchProviderTests
     }
 
     [Theory]
+    [InlineData("{\"id\":\"ea0fdb82-e542-11f1-88e3-f0c77f960846\"}", "ea0fdb82-e542-11f1-88e3-f0c77f960846")]
+    [InlineData("{\"id\":\"\"}", null)]
+    [InlineData("{\"error\":\"busy\"}", null)]
+    [InlineData("not json", null)]
+    public void ReadPhotoId_ReadsMediaServiceAnswer(string json, string? expected)
+    {
+        Assert.Equal(expected, ChatGptSearchProvider.ReadPhotoId(json));
+    }
+
+    [Theory]
     [InlineData("hey jibo what do you see", true)]
     [InlineData("what's in front of you", true)]
     [InlineData("what's the weather", false)]
