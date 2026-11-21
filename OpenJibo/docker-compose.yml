@@ -78,6 +78,7 @@ services:
       OpenJibo__ReleaseSmoke__Secret: ${OPENJIBO_RELEASE_SMOKE_SECRET:-}
       OpenJibo__ReleaseSmoke__MaxConcurrentDevices: ${OPENJIBO_RELEASE_SMOKE_MAX_CONCURRENT:-6}
       OpenJibo__SelfHosted__AllowTokenlessSingleRobotHub: ${OPENJIBO_ALLOW_TOKENLESS_SINGLE_ROBOT_HUB:-false}
+      OPENJIBO_FACES_URL: ${OPENJIBO_FACES_URL:-http://faces:8487}
       # Protocol captures and log level. Home servers can set OPENJIBO_CAPTURES=false so the
       # recordings do not fill the disk, and OPENJIBO_LOG_LEVEL=Information for quieter logs.
       # Docker logs are capped by "logging" below.
@@ -101,6 +102,24 @@ services:
         condition: service_healthy
     volumes:
       - api-data:/data
+    profiles:
+      - self-hosted
+
+  faces:
+    # Local face recogniser for "who am I?" (fork). Faces never leave this machine.
+    build:
+      context: ./faces
+    image: openjibo-faces:self-hosted
+    environment:
+      FACES_DATA: /data/faces.json
+    volumes:
+      - faces-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
     profiles:
       - self-hosted
 
@@ -147,5 +166,6 @@ services:
       - smoke
 
 volumes:
+  faces-data:
   api-data:
   postgres-data:

@@ -342,8 +342,48 @@ public sealed class ChatGptSearchProviderTests
     }
 
     [Theory]
+    [InlineData("learn my face i'm makis", false, "Makis")]
+    [InlineData("hey jibo learn my face, my name is mary please", false, "Mary")]
+    [InlineData("i'm nick, remember my face", false, "Nick")]
+    [InlineData("learn emma's face", false, "Emma")]
+    [InlineData("forget my face i'm makis", true, "Makis")]
+    [InlineData("learn my face", false, "")]
+    public void ParseFaceCommand_ReadsLearnAndForget(string query, bool forget, string name)
+    {
+        var command = ChatGptSearchProvider.ParseFaceCommand(query);
+
+        Assert.NotNull(command);
+        Assert.Equal(forget, command!.Forget);
+        Assert.Equal(name, command.Name);
+    }
+
+    [Theory]
+    [InlineData("what do you see")]
+    [InlineData("remember to buy milk")]
+    [InlineData("who am i")]
+    public void ParseFaceCommand_IgnoresOtherSentences(string query)
+    {
+        Assert.Null(ChatGptSearchProvider.ParseFaceCommand(query));
+    }
+
+    [Fact]
+    public void BuildFaceNote_NamesRecognisedPeopleAndWarnsAgainstGuessing()
+    {
+        Assert.Contains("recognised: Makis, Mary",
+            ChatGptSearchProvider.BuildFaceNote(new ChatGptSearchProvider.FaceIdentification(2, ["Makis", "Mary"])),
+            StringComparison.Ordinal);
+        Assert.Contains("Do not guess names",
+            ChatGptSearchProvider.BuildFaceNote(new ChatGptSearchProvider.FaceIdentification(1, [])),
+            StringComparison.Ordinal);
+        Assert.Equal(string.Empty, ChatGptSearchProvider.BuildFaceNote(null));
+        Assert.Equal(string.Empty,
+            ChatGptSearchProvider.BuildFaceNote(new ChatGptSearchProvider.FaceIdentification(0, [])));
+    }
+
+    [Theory]
     [InlineData("hey jibo what do you see", true)]
     [InlineData("what's in front of you", true)]
+    [InlineData("who am i", true)]
     [InlineData("what's the weather", false)]
     public void IsVisionQuestion_DetectsCameraQuestions(string query, bool expected)
     {

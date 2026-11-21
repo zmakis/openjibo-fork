@@ -54,11 +54,18 @@ public sealed class ChatGptSearchProvider(
 
         var model = SearchBackendSettingsResolver.ResolveModel(request.BackendSpec);
         var query = request.Query.Trim();
+
+        // "Learn my face, I'm Makis" / "forget my face, I'm Makis": local face recogniser.
+        var faceCommand = ParseFaceCommand(query);
+        if (faceCommand is not null)
+            return await HandleFaceCommandAsync(faceCommand, cancellationToken);
+
         var cacheKey = BuildCacheKey(request.BackendSpec, model, query);
         var visionPhoto = IsVisionQuestion(query)
             ? await TakeLiveCameraPhotoAsync(cancellationToken) ?? await WaitForFreshVisionPhotoAsync(cancellationToken)
             : null;
         var attachVision = visionPhoto is not null;
+        var faces = visionPhoto is null ? null : await IdentifyFacesAsync(visionPhoto, cancellationToken);
         var history = GetActiveHistory();
 
         // Claude-first brain (Claude only): one native Messages API call that can answer with
@@ -105,6 +112,7 @@ public sealed class ChatGptSearchProvider(
             model,
             query,
             visionPhoto,
+            faces,
             history,
             cancellationToken);
 
@@ -129,6 +137,7 @@ public sealed class ChatGptSearchProvider(
         string model,
         string prompt,
         string? visionPhotoPath,
+        FaceIdentification? faces,
         IReadOnlyList<ConversationTurn> history,
         CancellationToken cancellationToken)
     {
@@ -152,7 +161,8 @@ public sealed class ChatGptSearchProvider(
                         {
                             type = "text",
                             text = userMessage + "\n\n(The attached photo was just taken with your own camera. " +
-                                   "Describe what you see as Jibo, in one to three short spoken sentences.)"
+                                   "Describe what you see as Jibo, in one to three short spoken sentences.)" +
+                                   BuildFaceNote(faces)
                         },
                         new { type = "image_url", image_url = new { url = $"data:{mediaType};base64,{imageBase64}" } }
                     };
@@ -201,7 +211,9 @@ public sealed class ChatGptSearchProvider(
         "what do you see", "what can you see", "do you see", "can you see", "look at", "looking at",
         "what am i wearing", "am i wearing", "what is this", "what's this", "in front of you",
         "what am i holding", "describe me", "describe the photo", "describe the picture",
-        "how do i look", "what color is", "who is this", "read this", "in the photo", "in the picture"
+        "how do i look", "what color is", "who is this", "read this", "in the photo", "in the picture",
+        "who am i", "do you know me", "do you know who i am", "do you recognize me", "do you recognise me",
+        "who's this", "who is that", "who's that", "who is here"
     ];
 
     // A photo counts as "what Jibo sees right now" for a few minutes after it was taken
@@ -365,6 +377,169 @@ public sealed class ChatGptSearchProvider(
         }
 
         return null;
+    }
+
+    // ---- Local face recogniser (OpenJibo/faces, OPENJIBO_FACES_URL, default http://faces:8487) ----
+
+    internal sealed record FaceCommand(bool Forget, string Name);
+
+    internal sealed record FaceIdentification(int Faces, IReadOnlyList<string> Names);
+
+    private const string NameWord = @"[a-z][a-z'\-]{1,20}";
+    private const string IntroWords = @"(?:i\s*am|i'm|im|my\s+name\s+is|this\s+is|it's|it\s+is|call\s+me)";
+    private const string FaceObject = @"(?:my\s+face|me|what\s+i\s+look\s+like)";
+
+    private static readonly Regex LearnThenName = new(
+        @"\b(?<verb>learn|remember|memori[sz]e|forget)\s+" + FaceObject + @"[\s,.!-]+(?:please[\s,.!-]+)?" + IntroWords +
+        @"\s+(?<name>" + NameWord + @"(?:\s+" + NameWord + @")?)",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex NameThenLearn = new(
+        @"\b" + IntroWords + @"\s+(?<name>" + NameWord + @")[\s,.!-]+(?:please[\s,.!-]+)?(?:jibo[\s,.!-]+)?" +
+        @"(?<verb>learn|remember|memori[sz]e|forget)\s+" + FaceObject + @"\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex LearnPossessive = new(
+        @"\b(?<verb>learn|remember|memori[sz]e|forget)\s+(?<name>" + NameWord + @")'s\s+face\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly Regex LearnWithoutName = new(
+        @"\b(?:learn|remember|memori[sz]e)\s+my\s+face\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    private static readonly HashSet<string> NotNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "me", "my", "you", "your", "jibo", "please", "the", "a", "and", "here", "it", "this", "that"
+    };
+
+    /// <summary>"Learn my face, I'm Makis", "I'm Mary, remember my face", "learn Nick's face", "forget my face, I'm Makis".</summary>
+    internal static FaceCommand? ParseFaceCommand(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return null;
+        var match = LearnThenName.Match(query);
+        if (!match.Success) match = NameThenLearn.Match(query);
+        if (!match.Success) match = LearnPossessive.Match(query);
+        if (!match.Success)
+            return LearnWithoutName.IsMatch(query) ? new FaceCommand(false, string.Empty) : null;
+
+        var words = match.Groups["name"].Value
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .TakeWhile(word => !NotNames.Contains(word))
+            .ToArray();
+        if (words.Length == 0) return null;
+
+        var name = string.Join(' ', words.Select(word => char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant()));
+        return new FaceCommand(
+            match.Groups["verb"].Value.Equals("forget", StringComparison.OrdinalIgnoreCase),
+            name);
+    }
+
+    internal static string BuildFaceNote(FaceIdentification? faces)
+    {
+        if (faces is null) return string.Empty;
+        if (faces.Names.Count > 0)
+            return "\n(Face recognition on your own camera recognised: " + string.Join(", ", faces.Names) +
+                   ". Use their names naturally, for example to greet them. Never guess names for anyone else.)";
+        return faces.Faces > 0
+            ? "\n(Face recognition did not recognise anyone you know in this photo. Do not guess names. If asked " +
+              "who they are, say you don't know them yet and that they can say: learn my face, I'm and their name.)"
+            : string.Empty;
+    }
+
+    private static Uri? FacesBaseUri()
+    {
+        var raw = Environment.GetEnvironmentVariable("OPENJIBO_FACES_URL")?.Trim().TrimEnd('/');
+        return !string.IsNullOrEmpty(raw) && Uri.TryCreate(raw, UriKind.Absolute, out var uri) ? uri : null;
+    }
+
+    private async Task<FaceIdentification?> IdentifyFacesAsync(string photoPath, CancellationToken cancellationToken)
+    {
+        var baseUri = FacesBaseUri();
+        if (baseUri is null) return null;
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        try
+        {
+            var bytes = await System.IO.File.ReadAllBytesAsync(photoPath, timeout.Token);
+            using var content = new ByteArrayContent(bytes);
+            using var response = await httpClient.PostAsync(new Uri(baseUri, "/identify"), content, timeout.Token);
+            if (!response.IsSuccessStatusCode) return null;
+
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            var faceCount = document.RootElement.TryGetProperty("faces", out var f) && f.TryGetInt32(out var n) ? n : 0;
+            var names = document.RootElement.TryGetProperty("names", out var list) && list.ValueKind == JsonValueKind.Array
+                ? list.EnumerateArray().Select(e => e.GetString()).OfType<string>().ToList()
+                : new List<string>();
+            logger.LogInformation("Face recognition: {Faces} face(s), recognised {Names}.", faceCount,
+                names.Count == 0 ? "nobody" : string.Join(", ", names));
+            return new FaceIdentification(faceCount, names);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Face recognition service not reachable.");
+            return null;
+        }
+    }
+
+    private async Task<KnowledgeSearchResult> HandleFaceCommandAsync(FaceCommand command, CancellationToken cancellationToken)
+    {
+        KnowledgeSearchResult Say(string text, string mood = "neutral") =>
+            new(text, SearchBackendKind.ChatGPT, KnowledgeSearchOutcome.Found, mood);
+
+        if (string.IsNullOrEmpty(command.Name))
+            return Say("I'd love to. Tell me your name too: say, learn my face, I'm, and then your name.");
+
+        var baseUri = FacesBaseUri();
+        if (baseUri is null) return Say("My face memory isn't set up on this server yet.");
+
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        try
+        {
+            if (command.Forget)
+            {
+                using var forget = await httpClient.DeleteAsync(
+                    new Uri(baseUri, "/people?name=" + Uri.EscapeDataString(command.Name)), timeout.Token);
+                using var forgetDoc = JsonDocument.Parse(await forget.Content.ReadAsStringAsync(timeout.Token));
+                var forgotten = forgetDoc.RootElement.TryGetProperty("ok", out var ok) && ok.ValueKind == JsonValueKind.True;
+                logger.LogInformation("Face memory: forget {Name} -> {Result}.", command.Name, forgotten);
+                return Say(forgotten
+                    ? $"Okay, I've forgotten {command.Name}'s face."
+                    : $"I don't have a face saved for {command.Name}.");
+            }
+
+            var photoPath = await TakeLiveCameraPhotoAsync(timeout.Token);
+            if (photoPath is null)
+                return Say("I couldn't use my camera just now. Try again in a moment.");
+
+            var bytes = await System.IO.File.ReadAllBytesAsync(photoPath, timeout.Token);
+            using var content = new ByteArrayContent(bytes);
+            using var response = await httpClient.PostAsync(
+                new Uri(baseUri, "/enroll?name=" + Uri.EscapeDataString(command.Name)), content, timeout.Token);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(timeout.Token));
+            var root = document.RootElement;
+            var enrolled = root.TryGetProperty("ok", out var okValue) && okValue.ValueKind == JsonValueKind.True;
+            var reason = root.TryGetProperty("reason", out var r) ? r.GetString() : null;
+            var samples = root.TryGetProperty("samples", out var s) && s.TryGetInt32(out var count) ? count : 0;
+            logger.LogInformation("Face memory: learn {Name} -> ok={Ok} reason={Reason} samples={Samples}.",
+                command.Name, enrolled, reason ?? "-", samples);
+
+            if (enrolled)
+                return Say(samples < 3
+                    ? $"Nice to see you, {command.Name}! I'll remember your face. Say it again once or twice from a slightly different angle so I really learn it."
+                    : $"Got it, {command.Name}. I know your face really well now.", "happy");
+            return Say(reason switch
+            {
+                "several_faces" => "I can see more than one face. Please have just one person in front of me and try again.",
+                _ => "I couldn't see a face clearly. Look right at me, a little closer, and try again."
+            });
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Face memory request failed.");
+            return Say("My face memory isn't answering right now. Try again in a moment.");
+        }
     }
 
     internal static string? DetectImageMediaType(byte[] bytes)
