@@ -632,6 +632,25 @@ public sealed partial class JiboInteractionService
         }
     }
 
+    private static RobotPerceptionSnapshot? BuildRobotPerceptionSnapshot(GreetingPresenceProfile presence)
+    {
+        string? NameOf(string? id) =>
+            !string.IsNullOrWhiteSpace(id) && presence.LoopUserFirstNames.TryGetValue(id, out var name) &&
+            !string.IsNullOrWhiteSpace(name)
+                ? ToDisplayName(name)
+                : null;
+
+        var speaker = NameOf(presence.SpeakerId);
+        var present = presence.PeoplePresentIds
+            .Select(NameOf)
+            .Where(static name => name is not null)
+            .Select(static name => name!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var snapshot = new RobotPerceptionSnapshot(speaker, present);
+        return snapshot.IsEmpty ? null : snapshot;
+    }
+
     private static GreetingPresenceProfile ResolveGreetingPresenceProfile(TurnContext turn)
     {
         if (!turn.Attributes.TryGetValue("context", out var contextValue) ||

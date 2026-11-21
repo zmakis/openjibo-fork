@@ -1,5 +1,6 @@
 using Jibo.Cloud.Application.Abstractions;
 using Jibo.Runtime.Abstractions;
+using Microsoft.Extensions.Logging;
 
 namespace Jibo.Cloud.Application.Services;
 
@@ -40,6 +41,10 @@ public sealed partial class JiboInteractionService
         var isYesNoTurn = IsYesNoTurn(turn);
         var isSkillOwnedListen = SkillListenOwnership.IsSkillOwnedListen(turn);
         var greetingPresence = ResolveGreetingPresenceProfile(turn);
+        RobotPerception.Current = BuildRobotPerceptionSnapshot(greetingPresence);
+        if (RobotPerception.Current is { IsEmpty: false } perceived)
+            logger?.LogInformation("Robot perception: speaker={Speaker}, present={Present}.",
+                perceived.SpeakerName ?? "-", string.Join(", ", perceived.PeoplePresentNames));
 
         if (string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase))
         {

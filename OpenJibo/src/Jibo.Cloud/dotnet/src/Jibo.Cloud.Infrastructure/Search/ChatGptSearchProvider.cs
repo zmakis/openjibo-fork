@@ -79,7 +79,8 @@ public sealed class ChatGptSearchProvider(
 
         // A cached answer is only safe when it cannot depend on a photo, on earlier turns,
         // on live web results, or on the current time/date.
-        var useCache = !useWebSearch && !attachVision && history.Count == 0 && !IsTimeSensitive(query);
+        var useCache = !useWebSearch && !attachVision && history.Count == 0 && !IsTimeSensitive(query) &&
+                       RobotPerception.Current is null;
         if (useCache && TryGetCachedValue(cacheKey, out var cachedResult))
         {
             RememberResult(query, cachedResult);
@@ -152,6 +153,7 @@ public sealed class ChatGptSearchProvider(
                 prompt,
                 options.LlmInstructions);
 
+            userMessage += BuildRobotPerceptionNote(RobotPerception.Current);
             object userContent = userMessage;
             if (visionPhotoPath is not null && System.IO.File.Exists(visionPhotoPath))
             {
@@ -470,6 +472,26 @@ public sealed class ChatGptSearchProvider(
             : new FaceCommand(false, string.Join(' ', words.Select(w => char.ToUpperInvariant(w[0]) + w[1..].ToLowerInvariant())));
     }
 
+    /// <summary>
+    /// What Jibo's own on-robot recognition says (speaker / people present). Used first for names;
+    /// the server-side face memory on a fresh photo is the tie-breaker when they disagree.
+    /// </summary>
+    internal static string BuildRobotPerceptionNote(RobotPerceptionSnapshot? perception)
+    {
+        if (perception is null || perception.IsEmpty) return string.Empty;
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(perception.SpeakerName))
+            parts.Add($"the person talking to you is {perception.SpeakerName}");
+        var others = perception.PeoplePresentNames
+            .Where(name => !string.Equals(name, perception.SpeakerName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (others.Count > 0)
+            parts.Add("also nearby: " + string.Join(", ", others));
+        return "\n\n(Your own face and voice recognition says " + string.Join("; ", parts) +
+               ". Use their name only when it fits naturally. If a photo's face recognition below names " +
+               "someone else, trust the photo.)";
+    }
+
     internal static string BuildFaceNote(FaceIdentification? faces)
     {
         if (faces is null) return string.Empty;
@@ -739,7 +761,7 @@ public sealed class ChatGptSearchProvider(
             messages.Add(new JsonObject { ["role"] = "assistant", ["content"] = assistant });
         }
 
-        messages.Add(new JsonObject { ["role"] = "user", ["content"] = query });
+        messages.Add(new JsonObject { ["role"] = "user", ["content"] = query + BuildRobotPerceptionNote(RobotPerception.Current) });
 
         var tools = new JsonArray();
         if (includeWebSearch)
