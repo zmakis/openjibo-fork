@@ -61,6 +61,12 @@ public sealed partial class JiboInteractionService
         return decision;
     }
 
+    internal static bool IsFaceRecognitionQuestion(string lowered) =>
+        !string.IsNullOrWhiteSpace(lowered) &&
+        new[] { "who am i", "do you know me", "do you remember me", "who is this", "who's this",
+                "can you recognize me", "do you recognize me", "do you recognise me" }
+            .Any(phrase => lowered.Contains(phrase, StringComparison.Ordinal));
+
     private static JiboInteractionDecision BuildAiCommandUnsupportedDecision() =>
         new(
             "ai_command_unsupported",

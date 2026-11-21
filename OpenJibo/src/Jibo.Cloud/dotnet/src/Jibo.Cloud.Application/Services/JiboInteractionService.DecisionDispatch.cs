@@ -118,6 +118,14 @@ public sealed partial class JiboInteractionService
             knowledgeSearchService?.IsConfigured == true)
             semanticIntent = "chat";
 
+        // With face memory on (OPENJIBO_FACES_URL), "who am I?" / "do you know me?" look at the
+        // person with the camera instead of the stored-name answer. "What's my name?" stays as is.
+        if (string.Equals(semanticIntent, "memory_get_name", StringComparison.OrdinalIgnoreCase) &&
+            knowledgeSearchService?.IsConfigured == true &&
+            !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENJIBO_FACES_URL")) &&
+            IsFaceRecognitionQuestion(lowered))
+            semanticIntent = "chat";
+
         if (string.Equals(semanticIntent, "chat", StringComparison.OrdinalIgnoreCase))
         {
             if (isSkillOwnedListen)

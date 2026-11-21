@@ -2600,6 +2600,15 @@ public sealed class JiboInteractionServiceTests
     }
 
     [Theory]
+    [InlineData("who am i", true)]
+    [InlineData("do you know me", true)]
+    [InlineData("what is my name", false)]
+    public void IsFaceRecognitionQuestion_MatchesLookAtMeQuestions(string text, bool expected)
+    {
+        Assert.Equal(expected, JiboInteractionService.IsFaceRecognitionQuestion(text));
+    }
+
+    [Theory]
     [InlineData("do you see")]
     [InlineData("can you see")]
     public async Task BuildDecisionAsync_ClippedSeeQuestion_WithKnowledgeSearchConfigured_AsksTheAi(string transcript)
