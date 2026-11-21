@@ -400,8 +400,10 @@ public sealed class ChatGptSearchProvider(
         @"(?<verb>learn|remember|memori[sz]e|forget)\s+" + FaceObject + @"\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    // "learn Makis face", "learn Makis's face", "learn the face of Makis".
     private static readonly Regex LearnPossessive = new(
-        @"\b(?<verb>learn|remember|memori[sz]e|forget)\s+(?<name>" + NameWord + @")'s\s+face\b",
+        @"\b(?<verb>learn|remember|memori[sz]e|forget)\s+(?:the\s+face\s+of\s+(?<name>" + NameWord +
+        @")|(?!my\b)(?<name>[a-z][a-z\-]{1,20})(?:'s|')?\s+face)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private static readonly Regex LearnWithoutName = new(

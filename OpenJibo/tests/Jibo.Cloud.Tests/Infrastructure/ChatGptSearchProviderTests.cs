@@ -346,6 +346,9 @@ public sealed class ChatGptSearchProviderTests
     [InlineData("hey jibo learn my face, my name is mary please", false, "Mary")]
     [InlineData("i'm nick, remember my face", false, "Nick")]
     [InlineData("learn emma's face", false, "Emma")]
+    [InlineData("learn makis face", false, "Makis")]
+    [InlineData("hey jibo learn makis's face", false, "Makis")]
+    [InlineData("learn the face of mary", false, "Mary")]
     [InlineData("forget my face i'm makis", true, "Makis")]
     [InlineData("learn my face", false, "")]
     public void ParseFaceCommand_ReadsLearnAndForget(string query, bool forget, string name)

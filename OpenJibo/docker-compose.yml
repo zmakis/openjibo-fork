@@ -112,6 +112,7 @@ services:
     image: openjibo-faces:self-hosted
     environment:
       FACES_DATA: /data/faces.json
+      JIBO_CAMERA_URL: ${OPENJIBO_JIBO_CAMERA_URL:-}
     volumes:
       - faces-data:/data
     restart: unless-stopped
