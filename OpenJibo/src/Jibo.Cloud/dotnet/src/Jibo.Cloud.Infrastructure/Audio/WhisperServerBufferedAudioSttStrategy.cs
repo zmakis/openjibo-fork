@@ -98,7 +98,18 @@ public sealed class WhisperServerBufferedAudioSttStrategy(
                 return BuildResult(string.Empty, turn, wavPath, ffmpegResult, string.Empty, pageCounts);
             }
 
-            var rawResponse = await PostInferenceAsync(wavPath, cancellationToken);
+            var rawResponse = await PostInferenceAsync(wavPath, null, cancellationToken);
+
+            // Auto-detect sometimes hears short English as Korean, Spanish, Polish...
+            // If the detected language isn't one this household speaks, read it again as English.
+            var detected = ExtractDetectedLanguage(rawResponse);
+            if (IsAutoLanguage && detected is not null && !IsAllowedLanguage(detected))
+            {
+                logger.LogInformation(
+                    "Whisper detected {Language}, not in OPENJIBO_STT_WHISPER_ALLOWED_LANGUAGES; re-reading as English.",
+                    detected);
+                rawResponse = await PostInferenceAsync(wavPath, "en", cancellationToken);
+            }
             var transcript = AudioTranscriptNormalizer.NormalizeLooseTranscript(ExtractTranscript(rawResponse));
 
             if (TranscriptHeuristics.IsLikelyRobotSelfAudioTranscript(transcript))
@@ -141,7 +152,58 @@ public sealed class WhisperServerBufferedAudioSttStrategy(
         }
     }
 
-    private async Task<string> PostInferenceAsync(string wavPath, CancellationToken cancellationToken)
+    private bool IsAutoLanguage =>
+        string.Equals(_options.WhisperLanguage?.Trim(), "auto", StringComparison.OrdinalIgnoreCase);
+
+    // whisper-server reports full names ("english", "greek"); the setting uses codes ("en,el").
+    private static readonly Dictionary<string, string> LanguageNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["en"] = "english", ["el"] = "greek", ["fr"] = "french", ["es"] = "spanish", ["de"] = "german",
+        ["it"] = "italian", ["pt"] = "portuguese", ["nl"] = "dutch", ["pl"] = "polish", ["ru"] = "russian",
+        ["tr"] = "turkish", ["ar"] = "arabic", ["zh"] = "chinese", ["ja"] = "japanese", ["ko"] = "korean",
+        ["uk"] = "ukrainian", ["ro"] = "romanian", ["bg"] = "bulgarian", ["sq"] = "albanian", ["hi"] = "hindi"
+    };
+
+    /// <summary>
+    /// OPENJIBO_STT_WHISPER_ALLOWED_LANGUAGES (default "en,el"): languages kept as detected when
+    /// the language is "auto". Anything else is re-read as English. Set "any" to keep all.
+    /// </summary>
+    internal static bool IsAllowedLanguage(string detected, string? allowedSetting = null)
+    {
+        var setting = allowedSetting ??
+                      Environment.GetEnvironmentVariable("OPENJIBO_STT_WHISPER_ALLOWED_LANGUAGES") ?? "en,el";
+        if (string.Equals(setting.Trim(), "any", StringComparison.OrdinalIgnoreCase)) return true;
+
+        var value = detected.Trim();
+        foreach (var code in setting.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.Equals(code, value, StringComparison.OrdinalIgnoreCase)) return true;
+            if (LanguageNames.TryGetValue(code, out var name) &&
+                string.Equals(name, value, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+
+        return false;
+    }
+
+    internal static string? ExtractDetectedLanguage(string rawResponse)
+    {
+        if (string.IsNullOrWhiteSpace(rawResponse)) return null;
+        try
+        {
+            using var document = JsonDocument.Parse(rawResponse);
+            return document.RootElement.ValueKind == JsonValueKind.Object &&
+                   document.RootElement.TryGetProperty("language", out var language) &&
+                   language.ValueKind == JsonValueKind.String
+                ? language.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<string> PostInferenceAsync(string wavPath, string? languageOverride, CancellationToken cancellationToken)
     {
         var baseUrl = _options.WhisperServerUrl!.TrimEnd('/');
         var endpoint = $"{baseUrl}/inference";
@@ -152,8 +214,9 @@ public sealed class WhisperServerBufferedAudioSttStrategy(
         content.Add(fileContent, "file", Path.GetFileName(wavPath));
         content.Add(new StringContent("0.0"), "temperature");
         content.Add(new StringContent("0.2"), "temperature_inc");
-        content.Add(new StringContent("json"), "response_format");
-        content.Add(new StringContent(_options.WhisperLanguage), "language");
+        // verbose_json also reports the detected language, used for the auto-detect fallback.
+        content.Add(new StringContent(IsAutoLanguage ? "verbose_json" : "json"), "response_format");
+        content.Add(new StringContent(languageOverride ?? _options.WhisperLanguage), "language");
         if (_options.WhisperTranslate)
             content.Add(new StringContent("true"), "translate");
         if (_options.WhisperAudioContext > 0)
