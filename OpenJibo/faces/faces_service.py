@@ -64,15 +64,37 @@ def decode_image(body):
     return image
 
 
-def detect_faces(image):
-    """Faces sorted biggest first (YuNet rows: x, y, w, h, landmarks..., score)."""
+def _detect(image, threshold):
     height, width = image.shape[:2]
     with _lock:
+        _detector.setScoreThreshold(threshold)
         _detector.setInputSize((width, height))
         _, faces = _detector.detect(image)
-    if faces is None:
-        return []
-    return sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
+    return [] if faces is None else list(faces)
+
+
+def _brighten(image):
+    """Even out dim, uneven light (CLAHE on the lightness channel)."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    light, a, b = cv2.split(lab)
+    light = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8)).apply(light)
+    return cv2.cvtColor(cv2.merge((light, a, b)), cv2.COLOR_LAB2BGR)
+
+
+def detect_faces(image):
+    """Find faces, trying harder for Jibo's wide, often dim camera.
+
+    Returns (image_used, faces) with faces sorted biggest first; the image may be a brightened
+    or enlarged copy, and face coordinates refer to that copy.
+    """
+    attempts = [(image, 0.75), (_brighten(image), 0.6)]
+    big = cv2.resize(image, None, fx=1.6, fy=1.6, interpolation=cv2.INTER_CUBIC)
+    attempts += [(big, 0.6), (_brighten(big), 0.5)]
+    for candidate, threshold in attempts:
+        faces = _detect(candidate, threshold)
+        if faces:
+            return candidate, sorted(faces, key=lambda f: f[2] * f[3], reverse=True)
+    return image, []
 
 
 def embed(image, face):
@@ -98,6 +120,17 @@ def best_match(vector):
 def clean_name(raw):
     name = " ".join((raw or "").split())[:40]
     return name if name and all(c.isalpha() or c in " '-" for c in name) else None
+
+
+LAST_PHOTO = os.path.join(os.path.dirname(DATA_PATH) or ".", "last-photo.jpg")
+
+
+def _save_last(image, path):
+    """Keep only the most recent photo, to check what the camera saw (GET /last)."""
+    try:
+        cv2.imwrite(LAST_PHOTO, image)
+    except cv2.error:
+        pass
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -130,6 +163,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "people": len(_people)})
         if path == "/people":
             return self._send(200, {"people": {name: len(v) for name, v in _people.items()}})
+        if path == "/last" and os.path.exists(LAST_PHOTO):
+            with open(LAST_PHOTO, "rb") as handle:
+                body = handle.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return None
         return self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -139,7 +181,8 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as error:
             return self._send(400, {"error": str(error)})
 
-        faces = detect_faces(image)
+        _save_last(image, path)
+        image, faces = detect_faces(image)
         if path == "/identify":
             names = []
             for face in faces[:6]:
