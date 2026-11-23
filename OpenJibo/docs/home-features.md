@@ -44,6 +44,11 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
 - When a fresh photo's face memory names someone different, the AI trusts the photo.
 - Check it: `docker compose logs -f api | grep "Robot perception"`.
 
+## Morning hello
+- The first time each day Jibo greets someone he recognises (his own proactive greeting),
+  he also says today's home weather and a fun fact. Later greetings stay short.
+- Off switch: `OPENJIBO_MORNING_HELLO=false`. Log line: `Morning hello: added ...`.
+
 ## Daily stats ("how was your day?")
 - Say "Hey Jibo, how was your day?", "show me your stats", "how many conversations did you have"
   or "how was your week". Jibo says the numbers and shows them as text on his face.

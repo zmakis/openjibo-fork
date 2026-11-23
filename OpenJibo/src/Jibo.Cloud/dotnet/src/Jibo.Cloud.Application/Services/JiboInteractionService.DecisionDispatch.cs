@@ -64,9 +64,16 @@ public sealed partial class JiboInteractionService
                     ? BuildRobotTriggeredSurpriseDecision(catalog)
                     : BuildTriggerIgnoredDecision();
 
-            return ShouldHandleProactiveGreetingTrigger(turn, greetingPresence)
-                ? BuildProactiveGreetingDecision(turn, greetingPresence, referenceLocalTime)
-                : BuildTriggerIgnoredDecision();
+            if (!ShouldHandleProactiveGreetingTrigger(turn, greetingPresence))
+                return BuildTriggerIgnoredDecision();
+
+            // Read before the greeting records today's visit.
+            var lastGreetedUtc = ReadGreetingHistoryLastGreetedUtc(turn, greetingPresence);
+            var greeting = BuildProactiveGreetingDecision(turn, greetingPresence, referenceLocalTime);
+            return IsMorningHelloEnabled() &&
+                   IsFirstGreetingOfDay(lastGreetedUtc, referenceLocalTime ?? DateTimeOffset.Now)
+                ? await AddMorningHelloAsync(greeting, turn, cancellationToken)
+                : greeting;
         }
 
         var isTimerValueTurn = IsClockTimerValueTurn(clientRules, listenRules);
