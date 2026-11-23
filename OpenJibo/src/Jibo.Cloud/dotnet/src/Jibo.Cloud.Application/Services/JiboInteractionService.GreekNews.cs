@@ -30,7 +30,7 @@ public sealed partial class JiboInteractionService
 
     private static HttpClient CreateFeedHttp()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(6) };
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (OpenJibo news reader)");
         return client;
     }
@@ -82,17 +82,32 @@ public sealed partial class JiboInteractionService
         return decision with { IntentName = GreekNewsIntent, SkillPayload = payload };
     }
 
+    // Headlines are kept for 10 minutes, so asking twice is instant and a slow paper
+    // doesn't make the first ask fail. A failed read falls back to the last good copy (up to 6 hours).
+    private static readonly TimeSpan FeedFreshFor = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan FeedStaleOkFor = TimeSpan.FromHours(6);
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTimeOffset At, IReadOnlyList<string> Titles)>
+        FeedCache = new(StringComparer.OrdinalIgnoreCase);
+
     private async Task<IReadOnlyList<FeedHeadline>> ReadFeedAsync(NewsFeedSetting feed, CancellationToken cancellationToken)
     {
+        var now = DateTimeOffset.UtcNow;
+        if (FeedCache.TryGetValue(feed.Url, out var cached) && now - cached.At < FeedFreshFor)
+            return cached.Titles.Select(title => new FeedHeadline(feed.Name, title)).ToList();
+
         try
         {
             var xml = await FeedHttp.GetStringAsync(feed.Url, cancellationToken);
-            return ParseFeedTitles(xml, 3).Select(title => new FeedHeadline(feed.Name, title)).ToList();
+            var titles = ParseFeedTitles(xml, 3);
+            if (titles.Count > 0) FeedCache[feed.Url] = (now, titles);
+            return titles.Select(title => new FeedHeadline(feed.Name, title)).ToList();
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             logger?.LogWarning("Greek news: could not read {Paper} ({Error}).", feed.Name, exception.GetType().Name);
-            return [];
+            return FeedCache.TryGetValue(feed.Url, out var stale) && now - stale.At < FeedStaleOkFor
+                ? stale.Titles.Select(title => new FeedHeadline(feed.Name, title)).ToList()
+                : [];
         }
     }
 
