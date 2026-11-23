@@ -60,9 +60,15 @@ public sealed partial class JiboInteractionService
 
         var english = await TranslateHeadlinesAsync(headlines.Select(h => h.Title).ToList(), cancellationToken);
         var speech = english is null
-            ? $"I found {headlines.Count} Greek headlines and put them on my screen, but I need my AI brain to translate them."
+            ? $"I found {headlines.Count} Greek headlines, but I need my AI brain to translate them."
             : BuildGreekNewsSpeech(headlines.Select(h => h.Paper).ToList(), english);
-        return WithScreen(speech, BuildGreekNewsScreen(headlines));
+        speech = CleanSpeech(speech);
+        var screen = settings.ShowGreekOnScreen
+            ? BuildGreekNewsScreen(headlines)
+            : "Greek news\n" + string.Join("\n", headlines.Select(h => h.Paper).Distinct());
+        logger?.LogInformation("Greek news: speaking {Chars} chars, Greek on screen={Greek}.", speech.Length,
+            settings.ShowGreekOnScreen);
+        return WithScreen(speech, screen);
     }
 
     private static JiboInteractionDecision WithScreen(string speech, string screen)
@@ -148,6 +154,19 @@ public sealed partial class JiboInteractionService
         }
 
         return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Makes the spoken text safe for Jibo's speech markup (ESML is XML): no &amp;, &lt;, &gt;,
+    /// fancy quotes or Greek letters his English voice can't say.
+    /// </summary>
+    internal static string CleanSpeech(string text)
+    {
+        var cleaned = text.Replace("&", " and ");
+        cleaned = Regex.Replace(cleaned, "[<>\"«»“”„]", string.Empty);
+        cleaned = cleaned.Replace('‘', '\'').Replace('’', '\'').Replace('–', '-').Replace('—', '-');
+        cleaned = Regex.Replace(cleaned, @"\p{IsGreek}+", string.Empty);
+        return Regex.Replace(cleaned, @"\s+", " ").Trim();
     }
 
     private static string BuildGreekNewsScreen(IReadOnlyList<FeedHeadline> headlines)

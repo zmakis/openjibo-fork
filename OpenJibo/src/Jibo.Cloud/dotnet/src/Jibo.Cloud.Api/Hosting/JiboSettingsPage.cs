@@ -44,6 +44,7 @@ internal static class JiboSettingsPage
                 data.NewsFeeds.Add(new NewsFeedSetting { Name = newName[..Math.Min(newName.Length, 60)], Url = newUrl, Enabled = true });
 
             if (int.TryParse(form["maxHeadlines"], out var max)) data.MaxHeadlines = Math.Clamp(max, 1, 10);
+            data.ShowGreekOnScreen = form["showGreek"].Count > 0;
 
             return JiboSettings.Save(data)
                 ? Results.Redirect(Path + "?saved=1")
@@ -133,6 +134,8 @@ internal static class JiboSettingsPage
                 <label>Name<input type="text" name="newName" placeholder="e.g. Kathimerini"></label>
                 <label>RSS feed address<input type="url" name="newUrl" placeholder="https://..."></label>
               </div>
+              <h2>Screen</h2>
+              <div class="card"><label><input type="checkbox" name="showGreek" value="1"{{(data.ShowGreekOnScreen ? " checked" : "")}}> Show the Greek headlines on Jibo's face</label></div>
               <h2>How many headlines</h2>
               <div class="card"><input type="number" name="maxHeadlines" min="1" max="10" value="{{data.MaxHeadlines}}"></div>
               <button type="submit">Save</button>

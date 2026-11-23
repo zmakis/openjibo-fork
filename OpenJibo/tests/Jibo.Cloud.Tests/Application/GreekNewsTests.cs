@@ -64,4 +64,13 @@ public sealed class GreekNewsTests
             JiboSettings.PathOverride = null;
         }
     }
+
+    [Fact]
+    public void CleanSpeech_RemovesMarkupBreakersAndGreekLetters()
+    {
+        Assert.Equal("Fire and floods in hit Rhodes 'today'",
+            JiboInteractionService.CleanSpeech("Fire & floods in «Ροδος» hit Rhodes ‘today’"));
+        Assert.DoesNotContain("<", JiboInteractionService.CleanSpeech("a <b> c"));
+        Assert.DoesNotContain("Α", JiboInteractionService.CleanSpeech("Αθήνα news"));
+    }
 }

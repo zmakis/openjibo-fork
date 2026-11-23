@@ -15,6 +15,8 @@ public sealed class JiboSettingsData
 {
     public List<NewsFeedSetting> NewsFeeds { get; set; } = new();
     public int MaxHeadlines { get; set; } = 5;
+    /// <summary>Show the original Greek headlines on Jibo's face while he reads them.</summary>
+    public bool ShowGreekOnScreen { get; set; } = true;
 }
 
 /// <summary>
