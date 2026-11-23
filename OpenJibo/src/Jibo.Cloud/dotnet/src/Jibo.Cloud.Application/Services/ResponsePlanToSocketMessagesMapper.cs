@@ -1011,7 +1011,8 @@ public sealed class ResponsePlanToSocketMessagesMapper
         // speech instead.
         var screenText = ReadPayloadString(skillPayload, "screen_text");
         if (!string.IsNullOrWhiteSpace(screenText))
-            AttachFaceLabel(jcpConfig, "jiboScreenText", "jibo_screen_text", screenText.Trim(), "64");
+            AttachFaceLabel(jcpConfig, "jiboScreenText", "jibo_screen_text", screenText.Trim(),
+                ReadPayloadString(skillPayload, "screen_font_size") ?? "64");
         else if ((isKnowledgeSearchNotFound || isNotUnderstood) && !string.IsNullOrWhiteSpace(heardTranscript))
             AttachHeardTranscriptDisplay(jcpConfig, heardTranscript.Trim());
 

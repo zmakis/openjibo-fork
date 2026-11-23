@@ -18,7 +18,7 @@ public sealed partial class JiboInteractionService
     /// <summary>Prefix that tells the AI provider to translate headlines (one per line) to English.</summary>
     public const string TranslateHeadlinesMarker = "[[openjibo:translate-headlines]]";
 
-    private const int MaxScreenLineLength = 48;
+    private const int MaxScreenLineLength = 42;
 
     private static readonly HttpClient FeedHttp = CreateFeedHttp();
 
@@ -72,6 +72,7 @@ public sealed partial class JiboInteractionService
             ? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
             : new Dictionary<string, object?>(decision.SkillPayload, StringComparer.OrdinalIgnoreCase);
         payload[ScreenTextPayloadKey] = screen;
+        payload["screen_font_size"] = "52";
         return decision with { IntentName = GreekNewsIntent, SkillPayload = payload };
     }
 
