@@ -171,20 +171,32 @@ jobs:
         run: python3 -B -m unittest discover -s scripts/bootstrap -p test_inspect_robot_ota_package.py
 
       - name: Validate offline standalone starter packaging
+        # This fork changes docker-compose.yml (faces service), so the upstream signed
+        # starter-bundle contract (hash-pinned compose) does not apply here.
+        if: github.repository != 'zmakis/openjibo-fork'
         run: python3 -B -m unittest discover -s tests -p test_prepare_openjibo_starter_bundle.py
 
       - name: Validate neutral public site contract
         run: python3 -B -m unittest discover -s tests -p test_public_site.py
 
       - name: Validate targeted published starter preparation
+        # This fork changes docker-compose.yml (faces service), so the upstream signed
+        # starter-bundle contract (hash-pinned compose) does not apply here.
+        if: github.repository != 'zmakis/openjibo-fork'
         run: python3 -B -m unittest discover -s tests -p test_prepare_published_starter.py
 
       - name: Validate explicit published starter launch
+        # This fork changes docker-compose.yml (faces service), so the upstream signed
+        # starter-bundle contract (hash-pinned compose) does not apply here.
+        if: github.repository != 'zmakis/openjibo-fork'
         run: python3 -B -m unittest discover -s tests -p test_launch_published_starter.py
         env:
           OPENJIBO_TEST_COMPOSE_CONFIG: "1"
 
       - name: Validate offline standalone starter verification
+        # This fork changes docker-compose.yml (faces service), so the upstream signed
+        # starter-bundle contract (hash-pinned compose) does not apply here.
+        if: github.repository != 'zmakis/openjibo-fork'
         run: python3 -B -m unittest discover -s tests -p test_verify_openjibo_starter_bundle.py
 
       - name: Validate starter provenance trust policy
