@@ -44,6 +44,12 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
 - When a fresh photo's face memory names someone different, the AI trusts the photo.
 - Check it: `docker compose logs -f api | grep "Robot perception"`.
 
+## Home location override
+- If Jibo reports the wrong city or time zone (for example a robot first set up abroad), set
+  `OPENJIBO_HOME_LATITUDE`, `OPENJIBO_HOME_LONGITUDE`, `OPENJIBO_HOME_LOCATION_NAME` and
+  `OPENJIBO_HOME_TIMEZONE` in `.env`. Home weather, greetings, stats days and time answers from the
+  server then use them. Jibo's own on-screen clock still comes from the robot.
+
 ## Morning hello
 - The first time each day Jibo greets someone he recognises (his own proactive greeting),
   he also says today's home weather and a fun fact. Later greetings stay short.

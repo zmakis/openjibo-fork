@@ -44,7 +44,7 @@ public sealed partial class JiboInteractionService
         };
     }
 
-    private static DateTimeOffset? TryResolveReferenceLocalTime(TurnContext turn)
+    private static DateTimeOffset? TryResolveReferenceLocalTimeFromRobot(TurnContext turn)
     {
         if (!TryGetContextRuntime(turn, out var runtime)) return null;
 
@@ -433,7 +433,7 @@ public sealed partial class JiboInteractionService
             : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(candidate);
     }
 
-    private static (double Latitude, double Longitude)? TryResolveWeatherCoordinates(TurnContext turn)
+    private static (double Latitude, double Longitude)? TryResolveWeatherCoordinatesFromRobot(TurnContext turn)
     {
         if (!turn.Attributes.TryGetValue("context", out var contextValue) ||
             contextValue is null ||
@@ -461,7 +461,7 @@ public sealed partial class JiboInteractionService
         }
     }
 
-    private static string? TryResolveCurrentLocationName(TurnContext turn)
+    private static string? TryResolveCurrentLocationNameFromRobot(TurnContext turn)
     {
         if (turn.Attributes.TryGetValue("currentLocation", out var currentLocationValue) &&
             currentLocationValue is string currentLocationText &&
