@@ -55,6 +55,11 @@ public sealed class ChatGptSearchProvider(
         var model = SearchBackendSettingsResolver.ResolveModel(request.BackendSpec);
         var query = request.Query.Trim();
 
+        // Greek news: translate headlines (one per line) for Jibo's English voice.
+        if (query.StartsWith(global::Jibo.Cloud.Application.Services.JiboInteractionService.TranslateHeadlinesMarker, StringComparison.Ordinal))
+            return await TranslateHeadlinesAsync(endpoint, request.BackendSpec.Credential, model,
+                query[global::Jibo.Cloud.Application.Services.JiboInteractionService.TranslateHeadlinesMarker.Length..], cancellationToken);
+
         // "Learn my face, I'm Makis" / "forget my face, I'm Makis": local face recogniser.
         // Also the two-step form: "learn my face" -> "What's your name?" -> "Makis".
         var faceCommand = ParseFaceCommand(query) ?? TakePendingFaceName(query);
@@ -481,6 +486,44 @@ public sealed class ChatGptSearchProvider(
     /// What Jibo's own on-robot recognition says (speaker / people present). Used first for names;
     /// the server-side face memory on a fresh photo is the tie-breaker when they disagree.
     /// </summary>
+    private const string TranslateHeadlinesInstructions =
+        "You translate Greek news headlines into plain, natural English for a robot to read aloud. " +
+        "Return exactly one short English sentence per input line, in the same order, one per line. " +
+        "No numbering, no quotes, no extra text.";
+
+    private async Task<KnowledgeSearchResult> TranslateHeadlinesAsync(
+        string endpoint, string apiKey, string model, string headlines, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            httpRequest.Content = JsonContent.Create(
+                new ChatCompletionRequest(model,
+                    BuildMessages(TranslateHeadlinesInstructions, Array.Empty<ConversationTurn>(), headlines.Trim())));
+            using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogWarning("Headline translation failed with status {StatusCode}.", response.StatusCode);
+                return KnowledgeSearchResult.Unavailable(SearchBackendKind.ChatGPT);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            var parsed = JsonSerializer.Deserialize<ChatCompletionResponse>(body, JsonOptions);
+            var text = parsed?.Choices?.FirstOrDefault()?.Message?.Content?.Trim() ?? string.Empty;
+            logger.LogInformation("Translated Greek headlines with the AI ({Lines} line(s)).",
+                text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length);
+            return text.Length == 0
+                ? KnowledgeSearchResult.NotFound(SearchBackendKind.ChatGPT)
+                : new KnowledgeSearchResult(text, SearchBackendKind.ChatGPT);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(exception, "Headline translation failed.");
+            return KnowledgeSearchResult.Unavailable(SearchBackendKind.ChatGPT);
+        }
+    }
+
     // Daily stats: count answers that really came from the AI.
     private static void CountAiForStats(KnowledgeSearchResult result)
     {

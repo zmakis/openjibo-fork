@@ -61,6 +61,15 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
 - Set `OPENJIBO_HA_URL` (e.g. `http://<ha-ip>:8123`) and `OPENJIBO_HA_TOKEN` (a long-lived access
   token from your Home Assistant profile) in `.env`. Without them the phrases go to the AI as usual.
 
+## Greek news + settings page
+- "Hey Jibo, read me the Greek news" / "Greek headlines": reads the ticked Greek newspapers' RSS
+  feeds, the AI translates the headlines into English for Jibo's English voice, and the original
+  Greek headlines show on his face.
+- Pick papers on the settings page `http://<vm-ip>:8080/jibo-settings` (user `jibo`, password
+  `OPENJIBO_SETTINGS_PASSWORD`). Built in: ERT News, Ta Nea, To Vima, Proto Thema, ERT,
+  Oikonomikos Taxydromos, Dimokratia, Avgi, Documento; you can add any other RSS feed.
+  Changes apply from the next question, no restart. Saved in `/data/jibo-settings.json`.
+
 ## Daily stats ("how was your day?")
 - Say "Hey Jibo, how was your day?", "show me your stats", "how many conversations did you have"
   or "how was your week". Jibo says the numbers and shows them as text on his face.

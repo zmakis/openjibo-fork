@@ -247,6 +247,7 @@ app.MapPost("/health/sigv4-replay-proof", async (
 
 app.MapPortalStaticFiles();
 app.MapPortalEndpoints();
+app.MapJiboSettingsPage();
 
 app.MapMethods("/{**path}", ["GET", "POST", "PUT"], async (HttpContext context, JiboCloudProtocolService service,
     IProtocolTelemetrySink telemetrySink, ITransportMetrics transportMetrics,

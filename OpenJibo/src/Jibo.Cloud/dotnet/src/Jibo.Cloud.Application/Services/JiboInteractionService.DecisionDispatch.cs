@@ -55,6 +55,10 @@ public sealed partial class JiboInteractionService
             !isSkillOwnedListen && IsHouseReportConfigured() && IsHouseReportRequest(lowered))
             return await BuildHouseReportDecisionAsync(cancellationToken);
 
+        if (!string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase) &&
+            !isSkillOwnedListen && IsGreekNewsRequest(lowered))
+            return await BuildGreekNewsDecisionAsync(cancellationToken);
+
         if (string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase))
         {
             if (RequiresLinkedUser(turn))
