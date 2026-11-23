@@ -49,6 +49,12 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
   he also says today's home weather and a fun fact. Later greetings stay short.
 - Off switch: `OPENJIBO_MORNING_HELLO=false`. Log line: `Morning hello: added ...`.
 
+## House report (Home Assistant)
+- "Hey Jibo, house report", "how's the house?", "which lights are on?": Jibo reads Home Assistant
+  and says which lights are on, and shows them as text on his face. Read-only.
+- Set `OPENJIBO_HA_URL` (e.g. `http://<ha-ip>:8123`) and `OPENJIBO_HA_TOKEN` (a long-lived access
+  token from your Home Assistant profile) in `.env`. Without them the phrases go to the AI as usual.
+
 ## Daily stats ("how was your day?")
 - Say "Hey Jibo, how was your day?", "show me your stats", "how many conversations did you have"
   or "how was your week". Jibo says the numbers and shows them as text on his face.
