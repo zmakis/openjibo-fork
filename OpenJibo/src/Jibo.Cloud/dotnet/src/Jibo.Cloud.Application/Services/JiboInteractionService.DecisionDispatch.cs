@@ -45,6 +45,11 @@ public sealed partial class JiboInteractionService
         if (RobotPerception.Current is { IsEmpty: false } perceived)
             logger?.LogInformation("Robot perception: speaker={Speaker}, present={Present}.",
                 perceived.SpeakerName ?? "-", string.Join(", ", perceived.PeoplePresentNames));
+        RecordTalkForStats(turn);
+
+        if (!string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase) &&
+            !isSkillOwnedListen && IsStatsRequest(lowered))
+            return BuildStatsDecision(lowered, referenceLocalTime);
 
         if (string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase))
         {

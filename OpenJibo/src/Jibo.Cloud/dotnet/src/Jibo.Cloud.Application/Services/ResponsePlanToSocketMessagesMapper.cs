@@ -1009,7 +1009,10 @@ public sealed class ResponsePlanToSocketMessagesMapper
         // Answer/Nimbus clears the eye during Thinking_Eye, so LISTEN asr.text alone never
         // paints Idle's quoted "heard" Label. Attach that view on not-found or not-understood
         // speech instead.
-        if ((isKnowledgeSearchNotFound || isNotUnderstood) && !string.IsNullOrWhiteSpace(heardTranscript))
+        var screenText = ReadPayloadString(skillPayload, "screen_text");
+        if (!string.IsNullOrWhiteSpace(screenText))
+            AttachFaceLabel(jcpConfig, "jiboScreenText", "jibo_screen_text", screenText.Trim(), "64");
+        else if ((isKnowledgeSearchNotFound || isNotUnderstood) && !string.IsNullOrWhiteSpace(heardTranscript))
             AttachHeardTranscriptDisplay(jcpConfig, heardTranscript.Trim());
 
         var weatherHiLoView = BuildWeatherHiLoView(skillPayload);
@@ -1604,9 +1607,16 @@ public sealed class ResponsePlanToSocketMessagesMapper
     /// Idle HJNoMatch Label — quoted ASR text centered on the face while speaking not-found.
     /// Nimbus ProcessCloud reads display.view.context as the MIM gui.
     /// </summary>
-    private static void AttachHeardTranscriptDisplay(IDictionary<string, object?> config, string transcript)
+    private static void AttachHeardTranscriptDisplay(IDictionary<string, object?> config, string transcript) =>
+        AttachFaceLabel(config, "heardTranscript", "global_not_matched_text", $"\"{transcript}\"", "120");
+
+    /// <summary>
+    /// Centered text Label on Jibo's face while he speaks (clears with the announcement).
+    /// Used for the heard transcript and for the daily stats screen.
+    /// </summary>
+    private static void AttachFaceLabel(IDictionary<string, object?> config, string viewName, string viewId,
+        string text, string fontSize)
     {
-        const string viewName = "heardTranscript";
         // FaceRenderer.WIDTH/HEIGHT on stock robot.
         const int faceWidth = 1280;
         const int faceHeight = 720;
@@ -1615,7 +1625,7 @@ public sealed class ResponsePlanToSocketMessagesMapper
             ["viewConfig"] = new
             {
                 type = "View",
-                id = "global_not_matched_text"
+                id = viewId
             },
             ["componentConfigs"] = new object[]
             {
@@ -1623,10 +1633,10 @@ public sealed class ResponsePlanToSocketMessagesMapper
                 {
                     id = "bottom",
                     type = "Label",
-                    text = $"\"{transcript}\"",
+                    text,
                     style = new
                     {
-                        fontSize = "120",
+                        fontSize,
                         fontFamily = "Proxima Nova Soft",
                         fontStyle = "bold",
                         fill = "#b6b6c2",

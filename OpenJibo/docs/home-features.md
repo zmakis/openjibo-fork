@@ -44,6 +44,16 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
 - When a fresh photo's face memory names someone different, the AI trusts the photo.
 - Check it: `docker compose logs -f api | grep "Robot perception"`.
 
+## Daily stats ("how was your day?")
+- Say "Hey Jibo, how was your day?", "show me your stats", "how many conversations did you have"
+  or "how was your week". Jibo says the numbers and shows them as text on his face.
+- Counted per day (the robot's local day): conversations, answers from the AI, skills the AI
+  picked, talks handled without the AI (jokes, timers, weather...), camera photos, faces
+  recognised, who he talked with most and his busiest hour.
+- Kept in `/data/jibo-stats.json` on the API data volume (about a year). Off switch:
+  `OPENJIBO_STATS=false`.
+- Sleep time and sounds heard happen inside the robot and aren't visible to the server yet.
+
 ## Speech recognition (Whisper)
 - With `OPENJIBO_STT_WHISPER_LANGUAGE=auto`, short English was sometimes detected as Korean,
   Spanish or Polish. Now, if the detected language isn't in

@@ -67,6 +67,7 @@ public sealed class ChatGptSearchProvider(
             : null;
         var attachVision = visionPhoto is not null;
         var faces = visionPhoto is null ? null : await IdentifyFacesAsync(visionPhoto, cancellationToken);
+        if (visionPhoto is not null) JiboDailyStats.RecordPhoto(faces?.Names.Count ?? 0);
         var history = GetActiveHistory();
 
         // Claude-first brain (Claude only): one native Messages API call that can answer with
@@ -84,6 +85,7 @@ public sealed class ChatGptSearchProvider(
         if (useCache && TryGetCachedValue(cacheKey, out var cachedResult))
         {
             RememberResult(query, cachedResult);
+            CountAiForStats(cachedResult);
             return cachedResult;
         }
 
@@ -102,6 +104,7 @@ public sealed class ChatGptSearchProvider(
                 RememberResult(query, claudeResult);
                 if (useCache && string.IsNullOrEmpty(claudeResult.CommandPhrase))
                     SetCachedValue(cacheKey, claudeResult, options.CacheTtlSeconds);
+                CountAiForStats(claudeResult);
                 return claudeResult;
             }
 
@@ -117,6 +120,8 @@ public sealed class ChatGptSearchProvider(
             faces,
             history,
             cancellationToken);
+
+        CountAiForStats(result);
 
         // Camera "recording light": glow the base light ring while Jibo describes the photo.
         if (attachVision && result.Outcome == KnowledgeSearchOutcome.Found && IsLightRingOnPhotoEnabled())
@@ -476,6 +481,14 @@ public sealed class ChatGptSearchProvider(
     /// What Jibo's own on-robot recognition says (speaker / people present). Used first for names;
     /// the server-side face memory on a fresh photo is the tie-breaker when they disagree.
     /// </summary>
+    // Daily stats: count answers that really came from the AI.
+    private static void CountAiForStats(KnowledgeSearchResult result)
+    {
+        if (result.Outcome != KnowledgeSearchOutcome.Found) return;
+        if (!string.IsNullOrWhiteSpace(result.CommandPhrase)) JiboDailyStats.RecordAiSkill();
+        else if (!string.IsNullOrWhiteSpace(result.AnswerText)) JiboDailyStats.RecordAiAnswer();
+    }
+
     internal static string BuildRobotPerceptionNote(RobotPerceptionSnapshot? perception)
     {
         if (perception is null || perception.IsEmpty) return string.Empty;
