@@ -19,7 +19,9 @@ public sealed partial class JiboInteractionService
     private static string? TryResolveCurrentLocationName(TurnContext turn)
     {
         var configured = Environment.GetEnvironmentVariable("OPENJIBO_HOME_LOCATION_NAME")?.Trim();
-        return string.IsNullOrEmpty(configured) ? TryResolveCurrentLocationNameFromRobot(turn) : configured;
+        return string.IsNullOrEmpty(configured) || IsOffValue(configured)
+            ? TryResolveCurrentLocationNameFromRobot(turn)
+            : configured;
     }
 
     private static DateTimeOffset? TryResolveReferenceLocalTime(TurnContext turn)
@@ -45,7 +47,7 @@ public sealed partial class JiboInteractionService
     internal static TimeZoneInfo? HomeTimeZoneOverride()
     {
         var id = Environment.GetEnvironmentVariable("OPENJIBO_HOME_TIMEZONE")?.Trim();
-        if (string.IsNullOrEmpty(id)) return null;
+        if (string.IsNullOrEmpty(id) || IsOffValue(id)) return null;
         try
         {
             return TimeZoneInfo.FindSystemTimeZoneById(id);
@@ -55,4 +57,9 @@ public sealed partial class JiboInteractionService
             return null;
         }
     }
+
+    private static bool IsOffValue(string value) =>
+        value.Equals("off", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("none", StringComparison.OrdinalIgnoreCase) ||
+        value.Equals("false", StringComparison.OrdinalIgnoreCase);
 }

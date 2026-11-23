@@ -32,7 +32,8 @@ public sealed partial class JiboInteractionService
     {
         var url = Environment.GetEnvironmentVariable("OPENJIBO_HA_URL")?.Trim().TrimEnd('/');
         var token = Environment.GetEnvironmentVariable("OPENJIBO_HA_TOKEN")?.Trim();
-        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(token)) return null;
+        if (string.IsNullOrEmpty(url) || string.IsNullOrEmpty(token) ||
+            url.Equals("off", StringComparison.OrdinalIgnoreCase)) return null;
         return Uri.TryCreate(url + "/", UriKind.Absolute, out var uri) ? (uri, token) : null;
     }
 

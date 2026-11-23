@@ -7,8 +7,8 @@ public sealed class HomeLocationTests
     [Fact]
     public void CoordinatesOverride_IsNullWithoutSettings()
     {
-        Environment.SetEnvironmentVariable("OPENJIBO_HOME_LATITUDE", null);
-        Environment.SetEnvironmentVariable("OPENJIBO_HOME_LONGITUDE", null);
+        // Pinned to "off" for tests (TestEnvironmentDefaults), which must count as not set.
+        Assert.Equal("off", Environment.GetEnvironmentVariable("OPENJIBO_HOME_LATITUDE"));
         Assert.Null(JiboInteractionService.HomeCoordinatesOverride());
     }
 
