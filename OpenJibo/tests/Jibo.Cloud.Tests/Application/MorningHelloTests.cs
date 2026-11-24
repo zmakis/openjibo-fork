@@ -30,4 +30,22 @@ public sealed class MorningHelloTests
         Assert.Equal("Right now it's 3 degrees with light snow, with a high of 6 today.",
             JiboInteractionService.BuildMorningWeatherSentence(snapshot));
     }
+
+    [Theory]
+    [InlineData(8, "Makis", "Good morning, Makis!")]
+    [InlineData(14, null, "Good afternoon!")]
+    [InlineData(21, "Mary", "Good evening, Mary!")]
+    public void FirstAnswerHello_MatchesTimeOfDay(int hour, string? name, string expected)
+    {
+        Assert.Equal(expected, JiboInteractionService.BuildFirstAnswerHello(hour, name));
+    }
+
+    [Fact]
+    public void MorningHello_IsClaimedOncePerDay()
+    {
+        var morning = new DateTimeOffset(2002, 5, 6, 8, 0, 0, Toronto);
+        Assert.True(JiboDailyStats.TryClaimMorningHello(morning));
+        Assert.False(JiboDailyStats.TryClaimMorningHello(morning.AddHours(2)));
+        Assert.True(JiboDailyStats.TryClaimMorningHello(morning.AddDays(1)));
+    }
 }

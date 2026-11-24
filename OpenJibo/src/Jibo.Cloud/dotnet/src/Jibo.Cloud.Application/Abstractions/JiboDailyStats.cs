@@ -12,6 +12,7 @@ public sealed class JiboDayStats
     public int FacesRecognised { get; set; }
     public Dictionary<int, int> Hours { get; set; } = new();
     public Dictionary<string, int> People { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public bool MorningHelloDone { get; set; }
 
     /// <summary>Talks the server answered on its own (jokes, timers, weather...) without the AI.</summary>
     public int BuiltIn => Math.Max(0, Talks - AiAnswers - AiSkills);
@@ -78,6 +79,29 @@ public static class JiboDailyStats
             if (!string.IsNullOrWhiteSpace(speakerName))
                 stats.People[speakerName] = stats.People.GetValueOrDefault(speakerName) + 1;
         }, robotLocalTime);
+    }
+
+    /// <summary>
+    /// True once per robot-local day: the caller may add the morning hello to this answer.
+    /// Works even when stats are switched off.
+    /// </summary>
+    public static bool TryClaimMorningHello(DateTimeOffset robotLocalTime)
+    {
+        lock (Gate)
+        {
+            var day = Key(DateOnly.FromDateTime(robotLocalTime.DateTime));
+            var days = Load();
+            if (!days.TryGetValue(day, out var stats))
+            {
+                stats = new JiboDayStats();
+                days[day] = stats;
+            }
+
+            if (stats.MorningHelloDone) return false;
+            stats.MorningHelloDone = true;
+            Save(days);
+            return true;
+        }
     }
 
     public static void RecordAiAnswer() => Update(static stats => stats.AiAnswers++);

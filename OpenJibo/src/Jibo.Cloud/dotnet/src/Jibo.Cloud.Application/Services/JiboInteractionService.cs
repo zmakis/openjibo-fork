@@ -459,6 +459,6 @@ public sealed partial class JiboInteractionService(
     {
         var decision = await BuildDecisionCoreAsync(turn, cancellationToken);
         RecordRepeatableCommand(turn, decision);
-        return decision;
+        return await AddFirstAnswerOfDayHelloAsync(turn, decision, cancellationToken);
     }
 }

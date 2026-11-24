@@ -11,9 +11,55 @@ namespace Jibo.Cloud.Application.Services;
 /// </summary>
 public sealed partial class JiboInteractionService
 {
-    private static bool IsMorningHelloEnabled() =>
-        !string.Equals(Environment.GetEnvironmentVariable("OPENJIBO_MORNING_HELLO")?.Trim(), "false",
-            StringComparison.OrdinalIgnoreCase);
+    private static bool IsMorningHelloEnabled()
+    {
+        var value = Environment.GetEnvironmentVariable("OPENJIBO_MORNING_HELLO")?.Trim();
+        return !(string.Equals(value, "false", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(value, "off", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static readonly HashSet<string> PlainSpeechPayloadKeys =
+        new(StringComparer.OrdinalIgnoreCase) { "cloudSkill", ScreenTextPayloadKey, "screen_font_size" };
+
+    /// <summary>
+    /// Jibo's own "I see you" greetings mostly stay on the robot, so the morning hello rides on
+    /// the first answer of the day instead: "Good morning, Makis! Right now it's 3 degrees..." and then
+    /// the answer. Only for plain spoken answers (not weather cards, games or skill launches).
+    /// </summary>
+    private async Task<JiboInteractionDecision> AddFirstAnswerOfDayHelloAsync(
+        TurnContext turn, JiboInteractionDecision decision, CancellationToken cancellationToken)
+    {
+        if (!IsMorningHelloEnabled() || string.IsNullOrWhiteSpace(decision.ReplyText) ||
+            decision.ReplyText.TrimStart().StartsWith('<')) return decision;
+        if (decision.SkillPayload is { } payload && payload.Keys.Any(key => !PlainSpeechPayloadKeys.Contains(key)))
+            return decision;
+        if (decision.IntentName is GreekNewsIntent or StatsIntent or HouseReportIntent) return decision;
+
+        var messageType = turn.Attributes.TryGetValue("messageType", out var rawType) ? rawType?.ToString() : null;
+        if (string.Equals(messageType, "TRIGGER", StringComparison.OrdinalIgnoreCase)) return decision;
+        if (string.IsNullOrWhiteSpace(turn.NormalizedTranscript ?? turn.RawTranscript)) return decision;
+
+        var local = TryResolveReferenceLocalTime(turn) ?? DateTimeOffset.Now;
+        if (!JiboDailyStats.TryClaimMorningHello(local)) return decision;
+
+        var name = BuildRobotPerceptionSnapshot(ResolveGreetingPresenceProfile(turn))?.SpeakerName;
+        var hello = BuildFirstAnswerHello(local.Hour, name);
+        var weather = await TryGetHomeWeatherSentenceAsync(turn, cancellationToken);
+        var prefix = string.IsNullOrWhiteSpace(weather) ? hello : hello + " " + weather;
+        logger?.LogInformation("Morning hello: added to the first answer of the day ({Intent}).", decision.IntentName);
+        return decision with { ReplyText = prefix + " " + decision.ReplyText.TrimStart() };
+    }
+
+    internal static string BuildFirstAnswerHello(int localHour, string? name)
+    {
+        var greeting = localHour switch
+        {
+            >= 4 and < 12 => "Good morning",
+            >= 12 and < 17 => "Good afternoon",
+            _ => "Good evening"
+        };
+        return string.IsNullOrWhiteSpace(name) ? greeting + "!" : $"{greeting}, {name}!";
+    }
 
     /// <summary>True when this person hasn't been greeted yet today (robot-local day).</summary>
     internal static bool IsFirstGreetingOfDay(DateTimeOffset? lastGreetedUtc, DateTimeOffset localNow) =>

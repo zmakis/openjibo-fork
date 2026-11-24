@@ -51,8 +51,10 @@ the brain. Everything is opt-in or has a switch in `.env`. See `.env.example` fo
   server then use them. Jibo's own on-screen clock still comes from the robot.
 
 ## Morning hello
-- The first time each day Jibo greets someone he recognises (his own proactive greeting),
-  he also says today's home weather and a fun fact. Later greetings stay short.
+- Jibo's own "I see you" greetings mostly stay on the robot, so the hello rides on the first
+  answer of the day: "Good morning, Makis! Right now it's 3 degrees with light snow..." and then
+  the answer (plain spoken answers only; weather cards and skills are left alone).
+- If his greeting does reach the server, the first one of the day also gets the weather and a fun fact.
 - Off switch: `OPENJIBO_MORNING_HELLO=false`. Log line: `Morning hello: added ...`.
 
 ## House report (Home Assistant)

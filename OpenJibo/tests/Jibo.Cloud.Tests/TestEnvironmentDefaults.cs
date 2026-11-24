@@ -16,7 +16,9 @@ internal static class TestEnvironmentDefaults
         "OPENJIBO_HOME_LOCATION_NAME",
         "OPENJIBO_HOME_TIMEZONE",
         "OPENJIBO_HA_URL",
-        "OPENJIBO_HA_TOKEN"
+        "OPENJIBO_HA_TOKEN",
+        // Off so the first answer in a test run isn't prefixed with "Good morning".
+        "OPENJIBO_MORNING_HELLO"
     ];
 
     [ModuleInitializer]
